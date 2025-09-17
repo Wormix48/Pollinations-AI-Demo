@@ -385,7 +385,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col">
       <Header />
       <main className="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-8">
-        <aside className="lg:w-1/3 xl:w-1/4 flex flex-col gap-6">
+        <aside className="lg:w-5/12 xl:w-1/3 flex flex-col gap-6">
           <PromptControls
             prompt={prompt}
             setPrompt={setPrompt}
@@ -431,7 +431,7 @@ const App: React.FC = () => {
             onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
           />
         </aside>
-        <section className="flex-grow lg:w-2/3 xl:w-3/4">
+        <section className="flex-grow lg:w-7/12 xl:w-2/3">
           <ImageDisplay
             activeHistoryItem={activeHistoryItem}
             isLoading={isLoading}
