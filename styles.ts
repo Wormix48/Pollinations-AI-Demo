@@ -613,7 +613,7 @@ Style name: Xilam_Comics_Animation; High energy, stylized 2D animation, colorful
 Style name: Yayoi Kusama; in Polka dot fever, infinity rooms, psychedelic immersion, obsessional pattern
 `;
 
-export const STYLES: Style[] = stylesRaw
+const parsedStyles = stylesRaw
   .split('\n')
   .map(line => line.trim())
   .filter(line => line.startsWith('Style name:') && line.includes(';'))
@@ -625,5 +625,14 @@ export const STYLES: Style[] = stylesRaw
     const prompt = parts.slice(1).join(';').trim().replace(/\./g, '');
     return { name, prompt };
   })
-  .filter(style => style.name && style.prompt)
+  .filter(style => style.name && style.prompt);
+
+const styleMap = new Map<string, Style>();
+for (const style of parsedStyles) {
+  if (!styleMap.has(style.name)) {
+    styleMap.set(style.name, style);
+  }
+}
+
+export const STYLES: Style[] = Array.from(styleMap.values())
   .sort((a, b) => a.name.localeCompare(b.name));
