@@ -28,17 +28,20 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, React.Disp
   // the component's state and the localStorage.
   const setValue: React.Dispatch<React.SetStateAction<T>> = (value) => {
     try {
-      // The value can be a new value or a function to update the existing value,
-      // mimicking the behavior of useState's setter.
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      
-      // Update the component's state.
-      setStoredValue(valueToStore);
-
-      // Persist the new value to localStorage, again ensuring this only runs client-side.
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
-      }
+      // Use the updater function form of the state setter to ensure we're working with the latest state.
+      // This prevents issues with stale closures.
+      setStoredValue(prevState => {
+        // The value can be a new value or a function to update the existing value,
+        // mimicking the behavior of useState's setter.
+        const valueToStore = value instanceof Function ? value(prevState) : value;
+        
+        // Persist the new value to localStorage, again ensuring this only runs client-side.
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        }
+        
+        return valueToStore;
+      });
     } catch (error) {
       console.warn(`Error setting localStorage key “${key}”:`, error);
     }
