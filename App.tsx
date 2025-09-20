@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Header } from './components/Header';
 import { PromptControls } from './components/PromptControls';
@@ -96,9 +95,13 @@ const App: React.FC = () => {
     validateKeyOnLoad();
   }, [geminiApiKey]);
   
-  // Clear image URL if model is not kontext
+  // Model-specific logic effects
   useEffect(() => {
-    if (selectedModel?.id !== 'kontext') {
+    // Disable enhancement feature for 'kontext' model as it's not supported.
+    if (selectedModel?.id === 'kontext') {
+      setIsEnhanceEnabled(false);
+      // Clear image URL if model is changed from kontext
+    } else {
       setImageUrl('');
     }
   }, [selectedModel]);
@@ -177,8 +180,7 @@ const App: React.FC = () => {
 
     let translationUsedFallbackForUI = false;
     let enhancementFailedForUI = false;
-    let usePollinationsEnhance = false;
-
+    
     try {
       let workingPrompt = basePrompt;
       if (isTranslateEnabled && basePrompt) {
@@ -204,23 +206,28 @@ const App: React.FC = () => {
         setIsLoading(false);
         return;
       }
-
+      
       let promptToUse = promptWithStyle;
+      let usePollinationsEnhance = false;
 
+      // Logic for enhancement:
+      // 1. If enhancement is enabled AND the model is not 'kontext'...
       if (isEnhanceEnabled && !isKontext) {
+        // 2. ...AND a valid Gemini key exists, use Gemini for enhancement.
         if (isGeminiKeyValid && geminiApiKey) {
           setLoadingMessage('Enhancing prompt...');
           const combinedStylePrompt = activeStyles.map(style => style.prompt).join(', ');
           const { enhancedPrompt, enhancementFailed } = await enhancePrompt(promptWithStyle, selectedModel.id, geminiApiKey, combinedStylePrompt);
           promptToUse = enhancedPrompt;
-          if (enhancementFailed) {
-              enhancementFailedForUI = true;
-          }
-          usePollinationsEnhance = false;
+          enhancementFailedForUI = enhancementFailed;
+          // Pollinations enhance is ALWAYS false when using Gemini enhance.
+          usePollinationsEnhance = false; 
         } else {
+          // 3. ...but NO valid Gemini key exists, use Pollinations' built-in enhancer.
           usePollinationsEnhance = true;
         }
       } else {
+        // 4. If enhancement is disabled or the model is 'kontext', do not use any enhancement.
         usePollinationsEnhance = false;
       }
       

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset } from '../types';
 import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon } from './Icons';
-import { ASPECT_RATIO_GROUPS } from '../constants';
+import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
 
 interface PromptControlsProps {
@@ -54,10 +54,45 @@ interface PromptControlsProps {
 const KontextImageUploader: React.FC<{
   imageUrl: string;
   setImageUrl: (url: string) => void;
-}> = ({ imageUrl, setImageUrl }) => {
+  onAspectRatioChange: (ratio: string) => void;
+  onDimensionChange: (width: string, height: string) => void;
+}> = ({ imageUrl, setImageUrl, onAspectRatioChange, onDimensionChange }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('data:image'))) {
+        const img = new Image();
+        // Attempt to avoid CORS issues for getting dimensions from external URLs
+        img.crossOrigin = "Anonymous"; 
+        
+        img.onload = () => {
+            const { naturalWidth, naturalHeight } = img;
+            if (naturalWidth > 0 && naturalHeight > 0) {
+                const imageRatio = naturalWidth / naturalHeight;
+                let bestMatch = ASPECT_RATIOS[0];
+                let minDiff = Infinity;
+
+                ASPECT_RATIOS.forEach(ratioOption => {
+                    const optionRatio = ratioOption.width / ratioOption.height;
+                    const diff = Math.abs(imageRatio - optionRatio);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        bestMatch = ratioOption;
+                    }
+                });
+
+                onAspectRatioChange(bestMatch.value);
+                onDimensionChange(String(bestMatch.width), String(bestMatch.height));
+            }
+        };
+        img.onerror = () => {
+            console.warn("Could not load image to determine aspect ratio. This could be due to a CORS policy or an invalid URL.");
+        };
+        img.src = imageUrl;
+    }
+  }, [imageUrl, onAspectRatioChange, onDimensionChange]);
 
   const handleUpload = async (file: File) => {
     if (!file) return;
@@ -478,7 +513,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
         </div>
         
         {selectedModel?.id === 'kontext' && (
-          <KontextImageUploader imageUrl={imageUrl} setImageUrl={setImageUrl} />
+          <KontextImageUploader 
+            imageUrl={imageUrl} 
+            setImageUrl={setImageUrl}
+            onAspectRatioChange={onAspectRatioChange}
+            onDimensionChange={onDimensionChange}
+          />
         )}
 
         <div>
@@ -718,7 +758,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               id="enhance-prompt-toggle" 
               checked={isEnhanceEnabled} 
               onChange={setIsEnhanceEnabled}
-              tooltip="Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses a built-in enhancer."
+              disabled={selectedModel?.id === 'kontext'}
+              tooltip={
+                selectedModel?.id === 'kontext' 
+                  ? "Enhancement is not available for the Kontext model."
+                  : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
+              }
             />
             <Toggle label="Safe Mode" id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
             <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />
