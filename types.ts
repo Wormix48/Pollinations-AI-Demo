@@ -14,6 +14,8 @@ export interface PollinationsImageParams {
   nofeed?: boolean;
   private?: boolean;
   safe?: boolean;
+  image?: string;
+  negative_prompt?: string;
 }
 
 export interface GenerationResult {
@@ -46,6 +48,7 @@ export interface Preset {
   nologo: boolean;
   nofeed: boolean;
   isPrivate: boolean;
+  imageUrl?: string;
 }
 
 // FIX: Add missing SavedPrompt interface

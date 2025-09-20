@@ -47,6 +47,9 @@ const App: React.FC = () => {
   const [history, setHistory] = useLocalStorage<GenerationHistoryItem[]>('generation-history', []);
   const [activeHistoryItem, setActiveHistoryItem] = useState<GenerationHistoryItem | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  
+  // Kontext model source image URL
+  const [imageUrl, setImageUrl] = useState<string>('');
 
   // Effect to sync active item with history from local storage
   useEffect(() => {
@@ -92,6 +95,13 @@ const App: React.FC = () => {
     };
     validateKeyOnLoad();
   }, [geminiApiKey]);
+  
+  // Clear image URL if model is not kontext
+  useEffect(() => {
+    if (selectedModel?.id !== 'kontext') {
+      setImageUrl('');
+    }
+  }, [selectedModel]);
 
 
   useEffect(() => {
@@ -153,12 +163,21 @@ const App: React.FC = () => {
       return;
     }
 
+    const isKontext = selectedModel.id === 'kontext';
+
+    if (isKontext && !imageUrl) {
+        setError('The Kontext model requires a source image. Please upload one or provide a URL.');
+        return;
+    }
+
+
     setIsLoading(true);
     setError(null);
     setLastRequestUrl(null);
 
-    let translationUsedFallback = false;
-    let enhancementFailed = false;
+    let translationUsedFallbackForUI = false;
+    let enhancementFailedForUI = false;
+    let usePollinationsEnhance = false;
 
     try {
       let workingPrompt = basePrompt;
@@ -166,8 +185,8 @@ const App: React.FC = () => {
           setLoadingMessage('Translating prompt...');
           const { translatedText, usedFallback } = await translateToEnglishIfNeeded(basePrompt, geminiApiKey);
           workingPrompt = translatedText;
-          if (usedFallback) {
-            translationUsedFallback = true;
+          if (usedFallback && geminiApiKey) {
+            translationUsedFallbackForUI = true;
           }
       }
 
@@ -187,14 +206,22 @@ const App: React.FC = () => {
       }
 
       let promptToUse = promptWithStyle;
-      if (isEnhanceEnabled && isGeminiKeyValid) {
-        setLoadingMessage('Enhancing prompt...');
-        const combinedStylePrompt = activeStyles.map(style => style.prompt).join(', ');
-        const { enhancedPrompt, enhancementFailed: didFail } = await enhancePrompt(promptWithStyle, selectedModel.id, geminiApiKey, combinedStylePrompt);
-        promptToUse = enhancedPrompt;
-        if (didFail) {
-            enhancementFailed = true;
+
+      if (isEnhanceEnabled && !isKontext) {
+        if (isGeminiKeyValid && geminiApiKey) {
+          setLoadingMessage('Enhancing prompt...');
+          const combinedStylePrompt = activeStyles.map(style => style.prompt).join(', ');
+          const { enhancedPrompt, enhancementFailed } = await enhancePrompt(promptWithStyle, selectedModel.id, geminiApiKey, combinedStylePrompt);
+          promptToUse = enhancedPrompt;
+          if (enhancementFailed) {
+              enhancementFailedForUI = true;
+          }
+          usePollinationsEnhance = false;
+        } else {
+          usePollinationsEnhance = true;
         }
+      } else {
+        usePollinationsEnhance = false;
       }
       
       setLoadingMessage('Generating your masterpiece...');
@@ -215,12 +242,22 @@ const App: React.FC = () => {
         width: finalWidth,
         height: finalHeight,
         seed: finalSeed ? Number(finalSeed) : undefined,
-        enhance: false,
+        enhance: usePollinationsEnhance,
         nologo,
         nofeed,
         private: isPrivate,
         safe: isSafeMode,
+        negative_prompt: '',
       };
+
+      if (isKontext && imageUrl) {
+        if (!imageUrl.startsWith('http')) {
+            setError('Please provide a valid public URL for the Kontext model. Upload an image if you don\'t have one.');
+            setIsLoading(false);
+            return;
+        }
+        params.image = imageUrl;
+      }
       
       const { blob, requestUrl } = await generateImage(params);
       const imageDataUrl = await blobToDataURL(blob);
@@ -231,8 +268,8 @@ const App: React.FC = () => {
         requestUrl,
         prompt: promptToUse,
         params,
-        translationUsedFallback,
-        enhancementFailed,
+        translationUsedFallback: translationUsedFallbackForUI,
+        enhancementFailed: enhancementFailedForUI,
       };
 
       setHistory(prev => [newHistoryItem, ...prev]);
@@ -249,7 +286,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid]);
+  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, imageUrl]);
   
   // Preset Handlers
   const handleSavePreset = (name: string) => {
@@ -271,7 +308,8 @@ const App: React.FC = () => {
       isSafeMode,
       nologo,
       nofeed,
-      isPrivate
+      isPrivate,
+      imageUrl: selectedModel?.id === 'kontext' ? imageUrl : undefined,
     };
 
     setPresets(prev => {
@@ -311,6 +349,7 @@ const App: React.FC = () => {
     setNofeed(preset.nofeed);
     setIsPrivate(preset.isPrivate);
     setSelectedPreset(name);
+    setImageUrl(preset.imageUrl || '');
   };
 
   const handleDeletePreset = (name: string) => {
@@ -429,6 +468,8 @@ const App: React.FC = () => {
             isGeminiKeyValid={isGeminiKeyValid}
             isCheckingGeminiKey={isCheckingGeminiKey}
             onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
+            imageUrl={imageUrl}
+            setImageUrl={setImageUrl}
           />
         </aside>
         <section className="flex-grow lg:w-7/12 xl:w-2/3">

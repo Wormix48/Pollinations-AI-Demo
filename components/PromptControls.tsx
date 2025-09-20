@@ -1,7 +1,6 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset } from '../types';
-import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon } from './Icons';
+import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS } from '../constants';
 import { STYLES } from '../styles';
 
@@ -48,7 +47,152 @@ interface PromptControlsProps {
   isGeminiKeyValid: boolean | null;
   isCheckingGeminiKey: boolean;
   onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
+  imageUrl: string;
+  setImageUrl: (url: string) => void;
 }
+
+const KontextImageUploader: React.FC<{
+  imageUrl: string;
+  setImageUrl: (url: string) => void;
+}> = ({ imageUrl, setImageUrl }) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please select an image file.');
+      return;
+    }
+
+    const MAX_FILE_SIZE_MB = 10;
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        setUploadError(`File is too large. Please select an image under ${MAX_FILE_SIZE_MB}MB.`);
+        return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    const formData = new FormData();
+    formData.append('image', file);
+    const IMGUR_CLIENT_ID = '546c25a59c58ad7';
+
+    try {
+      const response = await fetch('https://api.imgur.com/3/image', {
+        method: 'POST',
+        headers: {
+          Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setImageUrl(data.data.link);
+      } else {
+        const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
+        throw new Error(`Upload failed: ${errorMessage}`);
+      }
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+       if (errorMessage.toLowerCase().includes('failed to fetch')) {
+          setUploadError('Upload failed: Could not connect to the image host. This can be a network issue, CORS block, or the service may be down.');
+      } else {
+          setUploadError(`Upload failed: ${errorMessage}`);
+      }
+      setImageUrl('');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleUpload(e.target.files[0]);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isUploading) return;
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-medium text-gray-300">Kontext Image (URL or Upload)</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
+          placeholder="https://... or upload an image"
+          className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+          aria-label="Kontext source image URL"
+        />
+        {imageUrl && (
+            <button 
+              onClick={() => setImageUrl('')}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
+              title="Clear image"
+            >
+              <CloseIcon className="w-5 h-5" />
+            </button>
+        )}
+      </div>
+
+      <div 
+        className="relative border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors"
+        onClick={() => !isUploading && fileInputRef.current?.click()}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/*"
+          className="hidden"
+          disabled={isUploading}
+        />
+        {isUploading ? (
+            <div className="flex flex-col items-center justify-center gap-2">
+                <LoadingSpinner className="w-8 h-8 text-indigo-400" />
+                <p className="text-sm text-gray-400">Uploading to Imgur...</p>
+            </div>
+        ) : imageUrl ? (
+            <img src={imageUrl} alt="Preview" className="max-h-32 mx-auto rounded-md" />
+        ) : (
+            <div className="flex flex-col items-center justify-center gap-2">
+                <UploadIcon className="w-8 h-8 text-gray-500" />
+                <p className="text-sm text-gray-400">
+                    <span className="font-semibold text-indigo-400">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">PNG, JPG, GIF (Max 10MB)</p>
+            </div>
+        )}
+      </div>
+      <p className="text-xs text-yellow-400/80 uppercase font-semibold text-center mt-2 px-4">
+        Your image will be uploaded to Imgur for the model to process. Please do not upload confidential data.
+      </p>
+      {uploadError && <p className="text-xs text-red-400 mt-1">{uploadError}</p>}
+    </div>
+  );
+};
+
 
 const DragHandleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg viewBox="0 0 20 20" fill="currentColor" {...props}>
@@ -223,6 +367,8 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   isGeminiKeyValid,
   isCheckingGeminiKey,
   onCheckAndSaveApiKey,
+  imageUrl,
+  setImageUrl,
 }) => {
   const oneToOneRatio = ASPECT_RATIO_GROUPS.landscape.find(r => r.value === '1:1');
   const landscapeRatios = ASPECT_RATIO_GROUPS.landscape.filter(r => r.value !== '1:1');
@@ -231,6 +377,11 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const dragOverItem = useRef<number | null>(null);
   const [newPresetName, setNewPresetName] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
+
+  const promptPlaceholder =
+    selectedModel?.id === 'kontext'
+      ? 'Describe what you want to CHANGE in the uploaded image, e.g., "make the cat blue"'
+      : 'e.g., A majestic lion wearing a crown in a futuristic city';
 
   useEffect(() => {
     setApiKeyInput(geminiApiKey);
@@ -318,13 +469,18 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               id="prompt"
               rows={5}
               className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 resize-none placeholder-gray-500"
-              placeholder="e.g., A majestic lion wearing a crown in a futuristic city"
+              placeholder={promptPlaceholder}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               aria-label="Image generation prompt"
             />
           </div>
         </div>
+        
+        {selectedModel?.id === 'kontext' && (
+          <KontextImageUploader imageUrl={imageUrl} setImageUrl={setImageUrl} />
+        )}
+
         <div>
            <label className="block text-sm font-medium text-gray-300 mb-2">
             2. Choose Style(s) (Optional)
@@ -561,9 +717,8 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               label="Auto-enhance prompt" 
               id="enhance-prompt-toggle" 
               checked={isEnhanceEnabled} 
-              onChange={setIsEnhanceEnabled} 
-              disabled={!isGeminiKeyValid}
-              tooltip="Enter a valid Gemini API Key to enable."
+              onChange={setIsEnhanceEnabled}
+              tooltip="Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses a built-in enhancer."
             />
             <Toggle label="Safe Mode" id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
             <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />

@@ -22,6 +22,7 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
   const prompt = activeHistoryItem?.prompt ?? '';
   const translationUsedFallback = activeHistoryItem?.translationUsedFallback ?? false;
   const enhancementFailed = activeHistoryItem?.enhancementFailed ?? false;
+  const sourceImageUrl = activeHistoryItem?.params?.image;
 
   const Placeholder = () => (
     <div className="flex flex-col items-center justify-center gap-4 text-center text-gray-500">
@@ -70,6 +71,12 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
           <div className="aspect-square bg-black rounded-lg overflow-hidden shadow-2xl shadow-indigo-900/20">
             <img src={generatedImageUrl} alt={prompt} className="w-full h-full object-contain" />
           </div>
+          {sourceImageUrl && (
+            <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
+              <p className="text-sm font-semibold text-gray-200 mb-2">Source Image:</p>
+              <img src={sourceImageUrl} alt="Source for image-to-image generation" className="max-h-24 rounded-md" />
+            </div>
+          )}
           <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
             <p className="text-sm text-gray-300 break-words"><strong className="font-semibold text-gray-200">Prompt:</strong> {prompt}</p>
             {(translationUsedFallback || enhancementFailed) && (

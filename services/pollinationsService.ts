@@ -13,11 +13,7 @@ export const fetchModels = async (): Promise<string[]> => {
       throw new Error(`API Error (${response.status}): Could not fetch models.`);
     }
     const models = await response.json();
-    // Filter out specific models as requested
-    const filteredModels = (models as string[]).filter(
-        id => id !== 'kontext'
-    );
-    return filteredModels;
+    return models as string[];
   } catch (error) {
     console.error("Failed to fetch models from Pollinations API:", error);
     if (error instanceof Error) {
@@ -45,10 +41,13 @@ export const generateImage = async (params: PollinationsImageParams): Promise<Ge
   
   // Append query parameters, ensuring boolean values are strings 'true'/'false'
   Object.entries(otherParams).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '' && !(typeof value === 'number' && isNaN(value))) {
+    if (value !== undefined && value !== null && !(typeof value === 'number' && isNaN(value))) {
        url.searchParams.append(key, String(value));
     }
   });
+  
+  // Add referrer as a query parameter as requested
+  url.searchParams.append('referrer', 'pollinations-ai-demo');
 
   const requestUrl = url.toString();
 
