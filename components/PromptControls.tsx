@@ -107,6 +107,36 @@ const KontextImageUploader: React.FC<{
         return;
     }
 
+    // Read the file locally to determine aspect ratio before uploading
+    const localUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+        const { naturalWidth, naturalHeight } = img;
+        if (naturalWidth > 0 && naturalHeight > 0) {
+            const imageRatio = naturalWidth / naturalHeight;
+            let bestMatch = ASPECT_RATIOS[0];
+            let minDiff = Infinity;
+
+            ASPECT_RATIOS.forEach(ratioOption => {
+                const optionRatio = ratioOption.width / ratioOption.height;
+                const diff = Math.abs(imageRatio - optionRatio);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestMatch = ratioOption;
+                }
+            });
+
+            onAspectRatioChange(bestMatch.value);
+            onDimensionChange(String(bestMatch.width), String(bestMatch.height));
+        }
+        URL.revokeObjectURL(img.src); // Clean up
+    };
+    img.onerror = () => {
+        console.warn("Could not load local image to determine aspect ratio.");
+        URL.revokeObjectURL(img.src); // Clean up
+    };
+    img.src = localUrl;
+
     setIsUploading(true);
     setUploadError(null);
 
@@ -413,8 +443,10 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const [newPresetName, setNewPresetName] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
 
+  const isKontextSelected = selectedModel?.id === 'kontext';
+  
   const promptPlaceholder =
-    selectedModel?.id === 'kontext'
+    isKontextSelected
       ? 'Describe what you want to CHANGE in the uploaded image, e.g., "make the cat blue"'
       : 'e.g., A majestic lion wearing a crown in a futuristic city';
 
@@ -512,7 +544,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           </div>
         </div>
         
-        {selectedModel?.id === 'kontext' && (
+        {isKontextSelected && (
           <KontextImageUploader 
             imageUrl={imageUrl} 
             setImageUrl={setImageUrl}
@@ -756,11 +788,11 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             <Toggle 
               label="Auto-enhance prompt" 
               id="enhance-prompt-toggle" 
-              checked={isEnhanceEnabled} 
+              checked={isKontextSelected ? false : isEnhanceEnabled} 
               onChange={setIsEnhanceEnabled}
-              disabled={selectedModel?.id === 'kontext'}
+              disabled={isKontextSelected}
               tooltip={
-                selectedModel?.id === 'kontext' 
+                isKontextSelected
                   ? "Enhancement is not available for the Kontext model."
                   : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
               }

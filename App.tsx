@@ -97,11 +97,8 @@ const App: React.FC = () => {
   
   // Model-specific logic effects
   useEffect(() => {
-    // Disable enhancement feature for 'kontext' model as it's not supported.
-    if (selectedModel?.id === 'kontext') {
-      setIsEnhanceEnabled(false);
-      // Clear image URL if model is changed from kontext
-    } else {
+    // Clear image URL if model is changed from kontext
+    if (selectedModel?.id !== 'kontext') {
       setImageUrl('');
     }
   }, [selectedModel]);
