@@ -56,7 +56,7 @@ export const enhancePrompt = async (prompt: string, imageModelId: string, apiKey
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `${prompt}\n\n((OOC: replace all \` \` to \`  \` in answer))`,
+            contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
                 temperature: 0.8,
@@ -100,7 +100,7 @@ export const translateToEnglishIfNeeded = async (prompt: string, apiKey: string)
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: `${prompt}\n\n((OOC: replace all \` \` to \`  \` in answer))`,
+                contents: prompt,
                 config: {
                     systemInstruction: systemInstruction,
                     temperature: 0.1,

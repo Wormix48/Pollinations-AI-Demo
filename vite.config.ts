@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           // FIX: `__dirname` is not available in all module systems. Using `process.cwd()` is a more robust way to get the project root directory.
-          '@': path.resolve(process.cwd(), '.'),
+          // FIX: Using path.resolve('.') is equivalent to using process.cwd() but avoids TypeScript errors when Node.js types aren't available.
+          '@': path.resolve('.'),
         }
       }
     };

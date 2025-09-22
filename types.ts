@@ -14,7 +14,7 @@ export interface PollinationsImageParams {
   nofeed?: boolean;
   private?: boolean;
   safe?: boolean;
-  image?: string;
+  image?: string | string[];
   negative_prompt?: string;
 }
 
@@ -33,6 +33,11 @@ export interface SelectedStyle {
   style: Style | null;
 }
 
+export interface UploadedImage {
+  url: string;
+  deletehash?: string;
+}
+
 export interface Preset {
   name: string;
   modelId: string;
@@ -48,7 +53,7 @@ export interface Preset {
   nologo: boolean;
   nofeed: boolean;
   isPrivate: boolean;
-  imageUrl?: string;
+  images?: UploadedImage[];
 }
 
 // FIX: Add missing SavedPrompt interface

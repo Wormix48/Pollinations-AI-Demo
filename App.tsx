@@ -1,13 +1,13 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptControls } from './components/PromptControls';
 import { ImageDisplay } from './components/ImageDisplay';
 import { HistoryGallery } from './components/HistoryGallery';
 import { Lightbox } from './components/Lightbox';
 import { generateImage, fetchModels } from './services/pollinationsService';
-import { enhancePrompt, translateToEnglishIfNeeded, checkGeminiApiKey } from './services/geminiService';
+import { enhancePrompt, translateToEnglishIfNeeded } from './services/geminiService';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem } from './types';
+import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem, UploadedImage } from './types';
 import { ASPECT_RATIOS } from './constants';
 
 const blobToDataURL = (blob: Blob): Promise<string> => {
@@ -28,10 +28,10 @@ const App: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState<boolean>(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  // Gemini API Key State
-  const [geminiApiKey, setGeminiApiKey] = useLocalStorage<string>('gemini-api-key', '');
-  const [isGeminiKeyValid, setIsGeminiKeyValid] = useState<boolean | null>(null);
-  const [isCheckingGeminiKey, setIsCheckingGeminiKey] = useState<boolean>(false);
+  // FIX: Gemini API Key is now sourced exclusively from environment variables as per guidelines.
+  // The app assumes the key is valid if present.
+  const geminiApiKey = process.env.API_KEY || '';
+  const isGeminiKeyValid = !!geminiApiKey;
   
   // Style state
   const [selectedStyles, setSelectedStyles] = useState<SelectedStyle[]>([{ id: Date.now(), style: null }]);
@@ -41,14 +41,15 @@ const App: React.FC = () => {
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [lastRequestUrl, setLastRequestUrl] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
   // History state
   const [history, setHistory] = useLocalStorage<GenerationHistoryItem[]>('generation-history', []);
   const [activeHistoryItem, setActiveHistoryItem] = useState<GenerationHistoryItem | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   
-  // Kontext model source image URL
-  const [imageUrl, setImageUrl] = useState<string>('');
+  // Image-to-Image model source image(s) with optional delete hashes
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
 
   // Effect to sync active item with history from local storage
   useEffect(() => {
@@ -79,27 +80,15 @@ const App: React.FC = () => {
   // Presets State
   const [presets, setPresets] = useLocalStorage<Preset[]>('generation-presets', []);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-
-  // Check Gemini API key on initial load
-  useEffect(() => {
-    const validateKeyOnLoad = async () => {
-      if (geminiApiKey) {
-        setIsCheckingGeminiKey(true);
-        const isValid = await checkGeminiApiKey(geminiApiKey);
-        setIsGeminiKeyValid(isValid);
-        setIsCheckingGeminiKey(false);
-      } else {
-        setIsGeminiKeyValid(false);
-      }
-    };
-    validateKeyOnLoad();
-  }, [geminiApiKey]);
   
   // Model-specific logic effects
   useEffect(() => {
-    // Clear image URL if model is changed from kontext
-    if (selectedModel?.id !== 'kontext') {
-      setImageUrl('');
+    // Clear image URL if model is changed from an image model
+    const isImageModel = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
+    if (!isImageModel) {
+      // Note: We don't delete from Imgur here, as the user might switch back.
+      // Deletion is handled by the user explicitly removing the image.
+      setUploadedImages([]);
     }
   }, [selectedModel]);
 
@@ -149,6 +138,11 @@ const App: React.FC = () => {
       setAspectRatio(matchingRatio ? matchingRatio.value : '');
   }, []);
 
+  const handleCancelGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
 
   const handleGenerate = useCallback(async () => {
     const basePrompt = prompt.trim();
@@ -163,13 +157,15 @@ const App: React.FC = () => {
       return;
     }
 
-    const isKontext = selectedModel.id === 'kontext';
+    const isImageModel = selectedModel.id === 'kontext' || selectedModel.id === 'nanobanana';
 
-    if (isKontext && !imageUrl) {
-        setError('The Kontext model requires a source image. Please upload one or provide a URL.');
+    if (isImageModel && uploadedImages.length === 0) {
+        setError('The selected model requires at least one source image. Please upload one or provide a URL.');
         return;
     }
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setIsLoading(true);
     setError(null);
@@ -208,8 +204,8 @@ const App: React.FC = () => {
       let usePollinationsEnhance = false;
 
       // Logic for enhancement:
-      // 1. If enhancement is enabled AND the model is not 'kontext'...
-      if (isEnhanceEnabled && !isKontext) {
+      // 1. If enhancement is enabled AND the model is not an image model...
+      if (isEnhanceEnabled && !isImageModel) {
         // 2. ...AND a valid Gemini key exists, use Gemini for enhancement.
         if (isGeminiKeyValid && geminiApiKey) {
           setLoadingMessage('Enhancing prompt...');
@@ -224,7 +220,7 @@ const App: React.FC = () => {
           usePollinationsEnhance = true;
         }
       } else {
-        // 4. If enhancement is disabled or the model is 'kontext', do not use any enhancement.
+        // 4. If enhancement is disabled or the model is an image model, do not use any enhancement.
         usePollinationsEnhance = false;
       }
       
@@ -254,16 +250,22 @@ const App: React.FC = () => {
         negative_prompt: '',
       };
 
-      if (isKontext && imageUrl) {
-        if (!imageUrl.startsWith('http')) {
-            setError('Please provide a valid public URL for the Kontext model. Upload an image if you don\'t have one.');
+      if (isImageModel && uploadedImages.length > 0) {
+        const imageUrls = uploadedImages.map(img => img.url);
+        const invalidUrl = imageUrls.find(url => !url.startsWith('http'));
+        if (invalidUrl) {
+            setError('Please provide a valid public URL for all images. Upload images if you don\'t have a URL.');
             setIsLoading(false);
             return;
         }
-        params.image = imageUrl;
+        params.image = imageUrls;
       }
       
-      const { blob, requestUrl } = await generateImage(params);
+      const onRetryCallback = (attempt: number, maxRetries: number) => {
+        setLoadingMessage(`Generation is slow... Retrying (attempt ${attempt}/${maxRetries}).`);
+      };
+
+      const { blob, requestUrl } = await generateImage(params, controller.signal, onRetryCallback);
       const imageDataUrl = await blobToDataURL(blob);
 
       const newHistoryItem: GenerationHistoryItem = {
@@ -280,17 +282,24 @@ const App: React.FC = () => {
       setActiveHistoryItem(newHistoryItem);
 
     } catch (e) {
-      console.error(e);
-      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-      setError(`An error occurred during generation: ${errorMessage}. Please check the console for details.`);
-      if (e && typeof (e as any).requestUrl === 'string') {
-        setLastRequestUrl((e as any).requestUrl);
+      if (e instanceof Error && e.name === 'AbortError') {
+        console.log('Generation cancelled by user.');
+        // This is not a real error, so we don't set an error state.
+        // The finally block will handle resetting the loading state.
+      } else {
+        console.error(e);
+        const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+        setError(`An error occurred during generation: ${errorMessage}. Please check the console for details.`);
+        if (e && typeof (e as any).requestUrl === 'string') {
+          setLastRequestUrl((e as any).requestUrl);
+        }
       }
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
+      abortControllerRef.current = null;
     }
-  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, imageUrl]);
+  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages]);
   
   // Preset Handlers
   const handleSavePreset = (name: string) => {
@@ -298,6 +307,7 @@ const App: React.FC = () => {
       alert("Please enter a name for the preset.");
       return;
     }
+    const isImageModel = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
     const newPreset: Preset = {
       name: name.trim(),
       modelId: selectedModel?.id || '',
@@ -313,7 +323,7 @@ const App: React.FC = () => {
       nologo,
       nofeed,
       isPrivate,
-      imageUrl: selectedModel?.id === 'kontext' ? imageUrl : undefined,
+      images: isImageModel ? uploadedImages : undefined,
     };
 
     setPresets(prev => {
@@ -353,7 +363,7 @@ const App: React.FC = () => {
     setNofeed(preset.nofeed);
     setIsPrivate(preset.isPrivate);
     setSelectedPreset(name);
-    setImageUrl(preset.imageUrl || '');
+    setUploadedImages(preset.images || []);
   };
 
   const handleDeletePreset = (name: string) => {
@@ -388,18 +398,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCheckAndSaveApiKey = async (key: string): Promise<boolean> => {
-    setIsCheckingGeminiKey(true);
-    setIsGeminiKeyValid(null);
-    const isValid = await checkGeminiApiKey(key);
-    setIsGeminiKeyValid(isValid);
-    if (isValid) {
-      setGeminiApiKey(key);
-    }
-    setIsCheckingGeminiKey(false);
-    return isValid;
-  };
-
   // Lightbox Handlers
   const handleViewHistoryItem = (id: number) => {
     const index = history.findIndex(item => item.id === id);
@@ -420,7 +418,7 @@ const App: React.FC = () => {
 
   const handlePrevLightboxItem = () => {
     if (lightboxIndex !== null && lightboxIndex > 0) {
-      setLightboxIndex(lightboxIndex - 1);
+      setLightboxIndex(lightboxIndex - 1); // FIX: Should be -1 to go to previous
     }
   };
 
@@ -468,12 +466,9 @@ const App: React.FC = () => {
             onSavePreset={handleSavePreset}
             onLoadPreset={handleLoadPreset}
             onDeletePreset={handleDeletePreset}
-            geminiApiKey={geminiApiKey}
             isGeminiKeyValid={isGeminiKeyValid}
-            isCheckingGeminiKey={isCheckingGeminiKey}
-            onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
-            imageUrl={imageUrl}
-            setImageUrl={setImageUrl}
+            uploadedImages={uploadedImages}
+            setUploadedImages={setUploadedImages}
           />
         </aside>
         <section className="flex-grow lg:w-7/12 xl:w-2/3">
@@ -483,6 +478,8 @@ const App: React.FC = () => {
             loadingMessage={loadingMessage}
             error={error}
             lastRequestUrl={lastRequestUrl}
+            onRetry={error ? handleGenerate : undefined}
+            onCancel={isLoading ? handleCancelGeneration : undefined}
           />
            <HistoryGallery
             history={history}

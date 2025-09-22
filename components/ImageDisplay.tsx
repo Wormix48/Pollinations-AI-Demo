@@ -1,5 +1,5 @@
 import React from 'react';
-import { ImageIcon, LoadingSpinner, WarningIcon, ExternalLinkIcon } from './Icons';
+import { ImageIcon, LoadingSpinner, WarningIcon, ExternalLinkIcon, UpdateIcon, CloseIcon } from './Icons';
 import type { GenerationHistoryItem } from '../types';
 
 interface ImageDisplayProps {
@@ -8,6 +8,8 @@ interface ImageDisplayProps {
   loadingMessage: string;
   error: string | null;
   lastRequestUrl: string | null;
+  onRetry?: () => void;
+  onCancel?: () => void;
 }
 
 export const ImageDisplay: React.FC<ImageDisplayProps> = ({
@@ -15,14 +17,18 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
   isLoading,
   loadingMessage,
   error,
-  lastRequestUrl
+  lastRequestUrl,
+  onRetry,
+  onCancel,
 }) => {
   const generatedImageUrl = activeHistoryItem?.imageDataUrl;
-  const generatedImageRequestUrl = activeHistoryItem?.requestUrl;
   const prompt = activeHistoryItem?.prompt ?? '';
   const translationUsedFallback = activeHistoryItem?.translationUsedFallback ?? false;
   const enhancementFailed = activeHistoryItem?.enhancementFailed ?? false;
-  const sourceImageUrl = activeHistoryItem?.params?.image;
+  
+  const sourceImageParam = activeHistoryItem?.params?.image;
+  const sourceImageUrls = sourceImageParam ? (Array.isArray(sourceImageParam) ? sourceImageParam : [sourceImageParam]) : [];
+
 
   const Placeholder = () => (
     <div className="flex flex-col items-center justify-center gap-4 text-center text-gray-500">
@@ -40,6 +46,16 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
         </div>
         <h2 className="text-xl font-semibold text-indigo-400">{loadingMessage}</h2>
         <p className="max-w-md">Our AI is working its magic. This can take a moment, especially for complex creations.</p>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="mt-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-red-300 hover:text-red-200 transition-colors duration-200 py-2 px-4 rounded-md bg-red-900/40 hover:bg-red-900/60 ring-1 ring-inset ring-red-500/50"
+            aria-label="Cancel image generation"
+          >
+            <CloseIcon className="w-4 h-4" />
+            Cancel
+          </button>
+        )}
     </div>
   );
 
@@ -54,27 +70,44 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
               <h2 className="text-xl font-semibold">Generation Failed</h2>
               <p className="break-words">{error}</p>
           </div>
-          {lastRequestUrl && (
-            <a
-              href={lastRequestUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
-            >
-              <ExternalLinkIcon className="w-4 h-4" />
-              Open Generated Link
-            </a>
-          )}
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              {onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 py-2 px-3 rounded-md hover:bg-indigo-500/10"
+                >
+                  <UpdateIcon className="w-4 h-4" />
+                  Retry Generation
+                </button>
+              )}
+              {lastRequestUrl && (
+                <a
+                  href={lastRequestUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 py-2 px-3 rounded-md hover:bg-indigo-500/10"
+                >
+                  <ExternalLinkIcon className="w-4 h-4" />
+                  Open Generated Link
+                </a>
+              )}
+            </div>
+          </div>
         </div>
       ) : generatedImageUrl ? (
         <div className="w-full max-w-3xl animate-fade-in flex flex-col gap-4">
           <div className="aspect-square bg-black rounded-lg overflow-hidden shadow-2xl shadow-indigo-900/20">
             <img src={generatedImageUrl} alt={prompt} className="w-full h-full object-contain" />
           </div>
-          {sourceImageUrl && (
+          {sourceImageUrls.length > 0 && (
             <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
-              <p className="text-sm font-semibold text-gray-200 mb-2">Source Image:</p>
-              <img src={sourceImageUrl} alt="Source for image-to-image generation" className="max-h-24 rounded-md" />
+              <p className="text-sm font-semibold text-gray-200 mb-2">Source Image(s):</p>
+              <div className="flex flex-wrap gap-2">
+                {sourceImageUrls.map((url, index) => (
+                    <img key={index} src={url} alt={`Source for image-to-image generation ${index + 1}`} className="max-h-24 rounded-md" />
+                ))}
+              </div>
             </div>
           )}
           <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
@@ -86,15 +119,17 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
               </div>
             )}
           </div>
-          <a
-            href={generatedImageRequestUrl || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
-          >
-            <ExternalLinkIcon className="w-4 h-4" />
-            Open Full Image
-          </a>
+          {activeHistoryItem?.requestUrl && (
+            <a
+              href={activeHistoryItem.requestUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
+            >
+              <ExternalLinkIcon className="w-4 h-4" />
+              Open Full Image
+            </a>
+          )}
         </div>
       ) : (
         <Placeholder />

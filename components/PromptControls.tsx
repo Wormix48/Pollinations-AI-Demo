@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { GenerationModel, Style, SelectedStyle, Preset } from '../types';
+import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
 import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
@@ -43,28 +43,33 @@ interface PromptControlsProps {
   onSavePreset: (name: string) => void;
   onLoadPreset: (name: string) => void;
   onDeletePreset: (name: string) => void;
-  geminiApiKey: string;
-  isGeminiKeyValid: boolean | null;
-  isCheckingGeminiKey: boolean;
-  onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
-  imageUrl: string;
-  setImageUrl: (url: string) => void;
+  isGeminiKeyValid: boolean;
+  uploadedImages: UploadedImage[];
+  setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
 }
 
-const KontextImageUploader: React.FC<{
-  imageUrl: string;
-  setImageUrl: (url: string) => void;
+interface MultiImageUploaderProps {
+  uploadedImages: UploadedImage[];
+  setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
   onAspectRatioChange: (ratio: string) => void;
   onDimensionChange: (width: string, height: string) => void;
-}> = ({ imageUrl, setImageUrl, onAspectRatioChange, onDimensionChange }) => {
+  selectedModel: GenerationModel | null;
+}
+
+
+const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const IMGUR_CLIENT_ID = '546c25a59c58ad7';
+  const isKontext = selectedModel?.id === 'kontext';
+
 
   useEffect(() => {
-    if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('data:image'))) {
+    // Set aspect ratio based on the *first* image added
+    if (uploadedImages.length === 1 && (uploadedImages[0].url.startsWith('http') || uploadedImages[0].url.startsWith('data:image'))) {
         const img = new Image();
-        // Attempt to avoid CORS issues for getting dimensions from external URLs
         img.crossOrigin = "Anonymous"; 
         
         img.onload = () => {
@@ -90,105 +95,122 @@ const KontextImageUploader: React.FC<{
         img.onerror = () => {
             console.warn("Could not load image to determine aspect ratio. This could be due to a CORS policy or an invalid URL.");
         };
-        img.src = imageUrl;
+        img.src = uploadedImages[0].url;
     }
-  }, [imageUrl, onAspectRatioChange, onDimensionChange]);
+  }, [uploadedImages, onAspectRatioChange, onDimensionChange]);
 
-  const handleUpload = async (file: File) => {
-    if (!file) return;
+  const uploadFile = async (file: File): Promise<UploadedImage> => {
     if (!file.type.startsWith('image/')) {
-      setUploadError('Please select an image file.');
-      return;
+        throw new Error('File is not an image.');
     }
 
     const MAX_FILE_SIZE_MB = 10;
     if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        setUploadError(`File is too large. Please select an image under ${MAX_FILE_SIZE_MB}MB.`);
-        return;
+        throw new Error(`File "${file.name}" is too large (max ${MAX_FILE_SIZE_MB}MB).`);
     }
+    
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    const response = await fetch('https://api.imgur.com/3/image', {
+        method: 'POST',
+        headers: {
+            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
+        },
+        body: formData,
+    });
+    const data = await response.json();
 
-    // Read the file locally to determine aspect ratio before uploading
-    const localUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-        const { naturalWidth, naturalHeight } = img;
-        if (naturalWidth > 0 && naturalHeight > 0) {
-            const imageRatio = naturalWidth / naturalHeight;
-            let bestMatch = ASPECT_RATIOS[0];
-            let minDiff = Infinity;
-
-            ASPECT_RATIOS.forEach(ratioOption => {
-                const optionRatio = ratioOption.width / ratioOption.height;
-                const diff = Math.abs(imageRatio - optionRatio);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestMatch = ratioOption;
-                }
-            });
-
-            onAspectRatioChange(bestMatch.value);
-            onDimensionChange(String(bestMatch.width), String(bestMatch.height));
+    if (response.ok && data.success) {
+        const imageUrl = (data.data.link as string).replace(/\.jpeg$/, '.jpg');
+        return { url: imageUrl, deletehash: data.data.deletehash };
+    } else {
+        const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
+        throw new Error(`Upload failed for "${file.name}": ${errorMessage}`);
+    }
+  }
+  
+  const deleteFromImgur = async (deletehash: string) => {
+      try {
+        const response = await fetch(`https://api.imgur.com/3/image/${deletehash}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
+          },
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData?.data?.error || 'Failed to delete image from Imgur.');
         }
-        URL.revokeObjectURL(img.src); // Clean up
+        console.log(`Image with deletehash ${deletehash} deleted from Imgur successfully.`);
+      } catch (error) {
+        console.error('Error deleting image from Imgur:', error);
+        // Optionally show an error to the user, for now logging is sufficient
+        setUploadError(`Could not delete image from Imgur. It may have already been removed. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     };
-    img.onerror = () => {
-        console.warn("Could not load local image to determine aspect ratio.");
-        URL.revokeObjectURL(img.src); // Clean up
-    };
-    img.src = localUrl;
+    
+  const handleRemoveImage = async (indexToRemove: number) => {
+    const imageToRemove = uploadedImages[indexToRemove];
+    if (imageToRemove?.deletehash) {
+        await deleteFromImgur(imageToRemove.deletehash);
+    }
+    setUploadedImages(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
 
+
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    // FIX: Filter out any non-File objects to prevent passing `undefined` to `uploadFile`.
+    // This can happen with certain drag-and-drop actions (e.g., folders).
+    const validFiles = Array.from(files).filter(file => file instanceof File);
+
+    if (validFiles.length === 0) {
+      return; // No valid files to upload
+    }
+    
     setIsUploading(true);
     setUploadError(null);
 
-    const formData = new FormData();
-    formData.append('image', file);
-    const IMGUR_CLIENT_ID = '546c25a59c58ad7';
+    if (isKontext && uploadedImages.length > 0) {
+      await handleRemoveImage(0);
+    }
 
+    const filesToProcess = isKontext ? [validFiles[0]] : validFiles;
+    const uploadPromises = filesToProcess.map(file => uploadFile(file));
+    
     try {
-      const response = await fetch('https://api.imgur.com/3/image', {
-        method: 'POST',
-        headers: {
-          Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-        },
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setImageUrl(data.data.link);
+      const newImages = await Promise.all(uploadPromises);
+      if (isKontext) {
+        setUploadedImages(newImages);
       } else {
-        const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
-        throw new Error(`Upload failed: ${errorMessage}`);
+        setUploadedImages(prev => [...prev, ...newImages]);
       }
-    } catch (error) {
-      console.error('Image upload failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    } catch(error) {
+       console.error('Image upload failed:', error);
+       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
        if (errorMessage.toLowerCase().includes('failed to fetch')) {
           setUploadError('Upload failed: Could not connect to the image host. This can be a network issue, CORS block, or the service may be down.');
       } else {
           setUploadError(`Upload failed: ${errorMessage}`);
       }
-      setImageUrl('');
     } finally {
-      setIsUploading(false);
+        setIsUploading(false);
     }
   };
 
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleUpload(e.target.files[0]);
-    }
+    handleUpload(e.target.files);
+    // Reset file input to allow uploading the same file again
+    if(e.target) e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (isUploading) return;
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleUpload(e.dataTransfer.files[0]);
-    }
+    handleUpload(e.dataTransfer.files);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -196,27 +218,65 @@ const KontextImageUploader: React.FC<{
     e.stopPropagation();
   };
 
+  const handleAddUrl = async () => {
+    const url = urlInput.trim();
+    if(url.startsWith('http')) {
+        if (isKontext && uploadedImages.length > 0) {
+            await handleRemoveImage(0);
+        }
+        
+        const imageUrl = url.replace(/\.jpeg$/, '.jpg');
+        const newImage = { url: imageUrl };
+
+        if (isKontext) {
+            setUploadedImages([newImage]);
+        } else {
+            setUploadedImages(prev => [...prev, newImage]);
+        }
+        setUrlInput('');
+        setUploadError(null);
+    } else {
+        setUploadError('Please enter a valid URL starting with http/https.');
+    }
+  };
+  
   return (
-    <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-gray-300">Kontext Image (URL or Upload)</label>
+    <div className="flex flex-col gap-3">
+      <label className="text-sm font-medium text-gray-300">Source Image{isKontext ? '' : '(s)'} (URL or Upload)</label>
+      
+      {uploadedImages.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {uploadedImages.map((image, index) => (
+                <div key={index} className="relative group">
+                    <img src={image.url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover rounded-md aspect-square"/>
+                    <button 
+                      onClick={() => handleRemoveImage(index)}
+                      className="absolute top-1 right-1 p-1 bg-black/60 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Remove image"
+                    >
+                        <CloseIcon className="w-4 h-4" />
+                    </button>
+                </div>
+            ))}
+          </div>
+      )}
+
       <div className="flex items-center gap-2">
         <input
           type="text"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="https://... or upload an image"
+          value={urlInput}
+          onChange={(e) => setUrlInput(e.target.value)}
+          placeholder="Paste an image URL..."
           className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-          aria-label="Kontext source image URL"
+          aria-label="Source image URL for image-to-image models"
         />
-        {imageUrl && (
-            <button 
-              onClick={() => setImageUrl('')}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
-              title="Clear image"
-            >
-              <CloseIcon className="w-5 h-5" />
-            </button>
-        )}
+        <button 
+          onClick={handleAddUrl}
+          disabled={!urlInput.trim()}
+          className="px-3 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Add
+        </button>
       </div>
 
       <div 
@@ -230,6 +290,7 @@ const KontextImageUploader: React.FC<{
           ref={fileInputRef}
           onChange={handleFileChange}
           accept="image/*"
+          multiple={!isKontext}
           className="hidden"
           disabled={isUploading}
         />
@@ -238,8 +299,6 @@ const KontextImageUploader: React.FC<{
                 <LoadingSpinner className="w-8 h-8 text-indigo-400" />
                 <p className="text-sm text-gray-400">Uploading to Imgur...</p>
             </div>
-        ) : imageUrl ? (
-            <img src={imageUrl} alt="Preview" className="max-h-32 mx-auto rounded-md" />
         ) : (
             <div className="flex flex-col items-center justify-center gap-2">
                 <UploadIcon className="w-8 h-8 text-gray-500" />
@@ -250,8 +309,8 @@ const KontextImageUploader: React.FC<{
             </div>
         )}
       </div>
-      <p className="text-xs text-yellow-400/80 uppercase font-semibold text-center mt-2 px-4">
-        Your image will be uploaded to Imgur for the model to process. Please do not upload confidential data.
+      <p className="text-xs text-yellow-400/80 uppercase font-semibold text-center mt-1 px-4">
+        Images are uploaded to Imgur for the model to process. Please do not upload confidential data. (To delete a file from Imgur, click the X on the preview).
       </p>
       {uploadError && <p className="text-xs text-red-400 mt-1">{uploadError}</p>}
     </div>
@@ -428,12 +487,9 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   onSavePreset,
   onLoadPreset,
   onDeletePreset,
-  geminiApiKey,
   isGeminiKeyValid,
-  isCheckingGeminiKey,
-  onCheckAndSaveApiKey,
-  imageUrl,
-  setImageUrl,
+  uploadedImages,
+  setUploadedImages,
 }) => {
   const oneToOneRatio = ASPECT_RATIO_GROUPS.landscape.find(r => r.value === '1:1');
   const landscapeRatios = ASPECT_RATIO_GROUPS.landscape.filter(r => r.value !== '1:1');
@@ -441,36 +497,13 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const [newPresetName, setNewPresetName] = useState('');
-  const [apiKeyInput, setApiKeyInput] = useState('');
 
-  const isKontextSelected = selectedModel?.id === 'kontext';
+  const isImageModelSelected = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
   
   const promptPlaceholder =
-    isKontextSelected
-      ? 'Describe what you want to CHANGE in the uploaded image, e.g., "make the cat blue"'
+    isImageModelSelected
+      ? 'Describe what you want to CHANGE in the uploaded image(s), e.g., "make the cat blue"'
       : 'e.g., A majestic lion wearing a crown in a futuristic city';
-
-  useEffect(() => {
-    setApiKeyInput(geminiApiKey);
-  }, [geminiApiKey]);
-
-  const handleApiKeyCheck = async () => {
-    await onCheckAndSaveApiKey(apiKeyInput);
-  };
-  
-  const getApiKeyStatus = () => {
-    if (isCheckingGeminiKey) return { text: "Checking...", color: "text-yellow-400" };
-    if (isGeminiKeyValid === true) return { text: "Key is valid and saved.", color: "text-green-400" };
-    if (isGeminiKeyValid === false) {
-      if (geminiApiKey || apiKeyInput) {
-        return { text: "Key is invalid or failed check.", color: "text-red-400" };
-      }
-      return { text: "A valid Gemini API Key is required for enhancement/translation.", color: "text-gray-400" };
-    }
-    return { text: "Key status is unknown.", color: "text-gray-400" };
-  };
-  const apiKeyStatus = getApiKeyStatus();
-
 
   const handleAddStyle = () => {
     if (selectedStyles.length < 3) {
@@ -544,12 +577,13 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           </div>
         </div>
         
-        {isKontextSelected && (
-          <KontextImageUploader 
-            imageUrl={imageUrl} 
-            setImageUrl={setImageUrl}
+        {isImageModelSelected && (
+          <MultiImageUploader 
+            uploadedImages={uploadedImages} 
+            setUploadedImages={setUploadedImages}
             onAspectRatioChange={onAspectRatioChange}
             onDimensionChange={onDimensionChange}
+            selectedModel={selectedModel}
           />
         )}
 
@@ -676,28 +710,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
         </div>
       </div>
       
-      <div className="px-6 py-4 border-t border-gray-700/50">
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">Gemini API Key</h3>
-        <p className="text-xs text-gray-400 mb-3">Required for prompt enhancement and translation features.</p>
-        <div className="flex items-center gap-2">
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            placeholder="Enter your Gemini API Key"
-            className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-            aria-label="Gemini API Key"
-          />
-          <button
-            onClick={handleApiKeyCheck}
-            disabled={isCheckingGeminiKey || !apiKeyInput}
-            className="px-3 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:bg-indigo-600/20 disabled:cursor-not-allowed"
-          >
-            {isCheckingGeminiKey ? <LoadingSpinner className="w-5 h-5" /> : 'Check'}
-          </button>
-        </div>
-        <p className={`text-xs mt-2 ${apiKeyStatus.color}`}>{apiKeyStatus.text}</p>
-      </div>
+      {/* FIX: Removed API Key input section to comply with guidelines */}
 
       <div className="px-6 py-4 border-t border-b border-gray-700/50">
         <h3 className="text-sm font-semibold text-gray-300 mb-4">Advanced Settings</h3>
@@ -788,12 +801,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             <Toggle 
               label="Auto-enhance prompt" 
               id="enhance-prompt-toggle" 
-              checked={isKontextSelected ? false : isEnhanceEnabled} 
+              checked={isImageModelSelected ? false : isEnhanceEnabled} 
               onChange={setIsEnhanceEnabled}
-              disabled={isKontextSelected}
+              disabled={isImageModelSelected}
               tooltip={
-                isKontextSelected
-                  ? "Enhancement is not available for the Kontext model."
+                isImageModelSelected
+                  ? "Enhancement is not available for image-to-image models like Kontext or Nanobanana."
                   : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
               }
             />
