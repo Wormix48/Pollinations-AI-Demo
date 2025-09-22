@@ -122,7 +122,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
     const data = await response.json();
 
     if (response.ok && data.success) {
-        const imageUrl = (data.data.link as string).replace(/\.jpeg$/, '.jpg');
+        const imageUrl = (data.data.link as string).replace(/\.jpeg$/, '.jpeg');
         return { url: imageUrl, deletehash: data.data.deletehash };
     } else {
         const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
@@ -225,7 +225,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
             await handleRemoveImage(0);
         }
         
-        const imageUrl = url.replace(/\.jpeg$/, '.jpg');
+        const imageUrl = url.replace(/\.jpeg$/, '.jpeg');
         const newImage = { url: imageUrl };
 
         if (isKontext) {
