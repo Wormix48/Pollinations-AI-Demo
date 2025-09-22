@@ -35,7 +35,7 @@ export interface SelectedStyle {
 
 export interface UploadedImage {
   url: string;
-  deletehash?: string;
+  deleteUrl?: string;
 }
 
 export interface Preset {

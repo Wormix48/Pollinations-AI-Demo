@@ -3,6 +3,7 @@ import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } fro
 import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
+import { uploadImage, deleteImage } from '../services/imageHostService';
 
 interface PromptControlsProps {
   prompt: string;
@@ -62,7 +63,6 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const IMGUR_CLIENT_ID = '546c25a59c58ad7';
   const isKontext = selectedModel?.id === 'kontext';
 
 
@@ -98,87 +98,44 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
         img.src = uploadedImages[0].url;
     }
   }, [uploadedImages, onAspectRatioChange, onDimensionChange]);
-
-  const uploadFile = async (file: File): Promise<UploadedImage> => {
-    if (!file.type.startsWith('image/')) {
-        throw new Error('File is not an image.');
-    }
-
-    const MAX_FILE_SIZE_MB = 10;
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        throw new Error(`File "${file.name}" is too large (max ${MAX_FILE_SIZE_MB}MB).`);
-    }
-    
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await fetch('https://api.imgur.com/3/image', {
-        method: 'POST',
-        headers: {
-            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-        },
-        body: formData,
-    });
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-        const imageUrl = (data.data.link as string).replace(/\.jpeg$/, '.jpg');
-        return { url: imageUrl, deletehash: data.data.deletehash };
-    } else {
-        const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
-        throw new Error(`Upload failed for "${file.name}": ${errorMessage}`);
-    }
-  }
-  
-  const deleteFromImgur = async (deletehash: string) => {
-      try {
-        const response = await fetch(`https://api.imgur.com/3/image/${deletehash}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-          },
-        });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData?.data?.error || 'Failed to delete image from Imgur.');
-        }
-        console.log(`Image with deletehash ${deletehash} deleted from Imgur successfully.`);
-      } catch (error) {
-        console.error('Error deleting image from Imgur:', error);
-        // Optionally show an error to the user, for now logging is sufficient
-        setUploadError(`Could not delete image from Imgur. It may have already been removed. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    };
     
   const handleRemoveImage = async (indexToRemove: number) => {
-    const imageToRemove = uploadedImages[indexToRemove];
-    if (imageToRemove?.deletehash) {
-        await deleteFromImgur(imageToRemove.deletehash);
-    }
+    const imageToDelete = uploadedImages[indexToRemove];
+    
+    // Optimistically update the UI first for a responsive feel.
     setUploadedImages(prev => prev.filter((_, index) => index !== indexToRemove));
+
+    // Then, attempt to delete the image from the hosting service in the background.
+    if (imageToDelete?.deleteUrl) {
+      try {
+        await deleteImage(imageToDelete);
+      } catch (error) {
+        // If deletion fails, log it, but don't bother the user as the image is already gone from the UI.
+        console.error("Failed to delete source image from ImgBB, but it has been removed from the UI:", error);
+      }
+    }
   };
 
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
-    // FIX: Filter out any non-File objects to prevent passing `undefined` to `uploadFile`.
-    // This can happen with certain drag-and-drop actions (e.g., folders).
     const validFiles = Array.from(files).filter(file => file instanceof File);
 
     if (validFiles.length === 0) {
-      return; // No valid files to upload
+      return;
     }
     
     setIsUploading(true);
     setUploadError(null);
 
     if (isKontext && uploadedImages.length > 0) {
+      // For single-image models, remove the existing image before uploading a new one.
       await handleRemoveImage(0);
     }
 
     const filesToProcess = isKontext ? [validFiles[0]] : validFiles;
-    const uploadPromises = filesToProcess.map(file => uploadFile(file));
+    const uploadPromises = filesToProcess.map(file => uploadImage(file));
     
     try {
       const newImages = await Promise.all(uploadPromises);
@@ -218,15 +175,16 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
     e.stopPropagation();
   };
 
-  const handleAddUrl = async () => {
+  const handleAddUrl = () => {
     const url = urlInput.trim();
     if(url.startsWith('http')) {
         if (isKontext && uploadedImages.length > 0) {
-            await handleRemoveImage(0);
+            handleRemoveImage(0);
         }
         
         const imageUrl = url.replace(/\.jpeg$/, '.jpg');
-        const newImage = { url: imageUrl };
+        // When adding a URL, we don't have a deleteUrl.
+        const newImage: UploadedImage = { url: imageUrl };
 
         if (isKontext) {
             setUploadedImages([newImage]);
@@ -297,7 +255,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
         {isUploading ? (
             <div className="flex flex-col items-center justify-center gap-2">
                 <LoadingSpinner className="w-8 h-8 text-indigo-400" />
-                <p className="text-sm text-gray-400">Uploading to Imgur...</p>
+                <p className="text-sm text-gray-400">Uploading to ImgBB...</p>
             </div>
         ) : (
             <div className="flex flex-col items-center justify-center gap-2">
@@ -309,8 +267,9 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
             </div>
         )}
       </div>
-      <p className="text-xs text-yellow-400/80 uppercase font-semibold text-center mt-1 px-4">
-        Images are uploaded to Imgur for the model to process. Please do not upload confidential data. (To delete a file from Imgur, click the X on the preview).
+      <p className="text-xs text-yellow-400/80 text-center mt-1 px-4">
+        <span className="uppercase font-semibold block">Images are uploaded to ImgBB for processing. Do not upload confidential data.</span>
+        <span className="block mt-1">Clicking '×' on an image permanently deletes it from ImgBB.</span>
       </p>
       {uploadError && <p className="text-xs text-red-400 mt-1">{uploadError}</p>}
     </div>

@@ -10,6 +10,8 @@ interface ImageDisplayProps {
   lastRequestUrl: string | null;
   onRetry?: () => void;
   onCancel?: () => void;
+  isImageModelSelected: boolean;
+  onUseAsSource: (imageDataUrl: string) => void;
 }
 
 export const ImageDisplay: React.FC<ImageDisplayProps> = ({
@@ -20,6 +22,8 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
   lastRequestUrl,
   onRetry,
   onCancel,
+  isImageModelSelected,
+  onUseAsSource,
 }) => {
   const generatedImageUrl = activeHistoryItem?.imageDataUrl;
   const prompt = activeHistoryItem?.prompt ?? '';
@@ -119,17 +123,29 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
               </div>
             )}
           </div>
-          {activeHistoryItem?.requestUrl && (
-            <a
-              href={activeHistoryItem.requestUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
-            >
-              <ExternalLinkIcon className="w-4 h-4" />
-              Open Full Image
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-4">
+            {activeHistoryItem?.requestUrl && (
+              <a
+                href={activeHistoryItem.requestUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
+              >
+                <ExternalLinkIcon className="w-4 h-4" />
+                Open Full Image
+              </a>
+            )}
+            {activeHistoryItem && isImageModelSelected && (
+              <button
+                onClick={() => onUseAsSource(activeHistoryItem.imageDataUrl)}
+                className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
+                aria-label="Use this image as a source for a new generation"
+              >
+                <ImageIcon className="w-4 h-4" />
+                Use as Source
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <Placeholder />

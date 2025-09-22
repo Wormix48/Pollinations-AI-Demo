@@ -1,4 +1,5 @@
-import { useState } from 'react';
+// FIX: Import React to resolve 'Cannot find namespace React' error.
+import React, { useState } from 'react';
 
 // This hook is designed to synchronize a React state with the browser's localStorage.
 // It uses a lazy initializer for useState to read from localStorage only on the initial render,

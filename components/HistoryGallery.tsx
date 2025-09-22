@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import type { GenerationHistoryItem } from '../types';
-import { DownloadIcon, DeleteIcon, ExpandIcon } from './Icons';
+import { DownloadIcon, DeleteIcon, ExpandIcon, ImageIcon } from './Icons';
 
 interface HistoryGalleryProps {
   history: GenerationHistoryItem[];
@@ -10,6 +9,8 @@ interface HistoryGalleryProps {
   onDelete: (id: number) => void;
   onDownload: (id: number) => void;
   onView: (id: number) => void;
+  isImageModelSelected: boolean;
+  onUseAsSource: (imageDataUrl: string) => void;
 }
 
 const HistoryItem: React.FC<{
@@ -20,7 +21,9 @@ const HistoryItem: React.FC<{
   onDelete: (e: React.MouseEvent) => void;
   onDownload: (e: React.MouseEvent) => void;
   onView: (e: React.MouseEvent) => void;
-}> = ({ item, isActive, areControlsVisible, onSelect, onDelete, onDownload, onView }) => {
+  onUseAsSource: (e: React.MouseEvent) => void;
+  isImageModelSelected: boolean;
+}> = ({ item, isActive, areControlsVisible, onSelect, onDelete, onDownload, onView, onUseAsSource, isImageModelSelected }) => {
   return (
     <div className="relative aspect-square rounded-md overflow-hidden" onClick={onSelect}>
       <img
@@ -37,6 +40,16 @@ const HistoryItem: React.FC<{
         // Prevent click from bubbling up to the main div
         onClick={(e) => e.stopPropagation()}
       >
+        {isImageModelSelected && (
+            <button
+              onClick={onUseAsSource}
+              className="p-2 bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
+              title="Use as Source"
+              aria-label="Use as Source"
+            >
+              <ImageIcon className="w-5 h-5" />
+            </button>
+        )}
         <button
           onClick={onView}
           className="p-2 bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
@@ -66,7 +79,7 @@ const HistoryItem: React.FC<{
   );
 };
 
-export const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, activeItemId, onSelect, onDelete, onDownload, onView }) => {
+export const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, activeItemId, onSelect, onDelete, onDownload, onView, isImageModelSelected, onUseAsSource }) => {
   const [controlsVisibleId, setControlsVisibleId] = useState<number | null>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +123,8 @@ export const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, activeI
             onDelete={(e) => { e.stopPropagation(); onDelete(item.id); }}
             onDownload={(e) => { e.stopPropagation(); onDownload(item.id); }}
             onView={(e) => { e.stopPropagation(); onView(item.id); }}
+            onUseAsSource={(e) => { e.stopPropagation(); onUseAsSource(item.imageDataUrl); }}
+            isImageModelSelected={isImageModelSelected}
           />
         ))}
       </div>

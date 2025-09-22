@@ -9,6 +9,7 @@ import { enhancePrompt, translateToEnglishIfNeeded } from './services/geminiServ
 import { useLocalStorage } from './hooks/useLocalStorage';
 import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem, UploadedImage } from './types';
 import { ASPECT_RATIOS } from './constants';
+import { uploadImage, deleteImage } from './services/imageHostService';
 
 const blobToDataURL = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -42,6 +43,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastRequestUrl, setLastRequestUrl] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const controlsRef = useRef<HTMLElement>(null);
   
   // History state
   const [history, setHistory] = useLocalStorage<GenerationHistoryItem[]>('generation-history', []);
@@ -81,16 +83,17 @@ const App: React.FC = () => {
   const [presets, setPresets] = useLocalStorage<Preset[]>('generation-presets', []);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   
+  const isImageModelSelected = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
+
   // Model-specific logic effects
   useEffect(() => {
     // Clear image URL if model is changed from an image model
-    const isImageModel = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
-    if (!isImageModel) {
+    if (!isImageModelSelected) {
       // Note: We don't delete from Imgur here, as the user might switch back.
       // Deletion is handled by the user explicitly removing the image.
       setUploadedImages([]);
     }
-  }, [selectedModel]);
+  }, [selectedModel, isImageModelSelected]);
 
 
   useEffect(() => {
@@ -143,6 +146,46 @@ const App: React.FC = () => {
       abortControllerRef.current.abort();
     }
   };
+  
+  const handleUseAsSource = useCallback(async (imageDataUrl: string) => {
+    setIsLoading(true);
+    setError(null);
+    setLoadingMessage('Uploading source image...');
+    
+    // Make a copy of the old images to delete them after the new one is set.
+    const oldImagesToDelete = [...uploadedImages];
+
+    try {
+        const res = await fetch(imageDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `source-${Date.now()}.png`, { type: blob.type });
+
+        const newUploadedImage = await uploadImage(file);
+        setUploadedImages([newUploadedImage]); // Update UI with new image first
+
+        // Attempt to delete the old source image(s) in the background.
+        for (const oldImage of oldImagesToDelete) {
+          if (oldImage.deleteUrl) {
+            deleteImage(oldImage).catch(err => {
+              // Deletion failure should not block the user.
+              console.warn('Failed to delete old source image, continuing anyway:', err);
+            });
+          }
+        }
+
+        // Scroll to controls for immediate feedback
+        if (controlsRef.current) {
+            controlsRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
+        setError(`Failed to set source image: ${errorMessage}`);
+    } finally {
+        setIsLoading(false);
+        setLoadingMessage('');
+    }
+  }, [uploadedImages, setUploadedImages]);
 
   const handleGenerate = useCallback(async () => {
     const basePrompt = prompt.trim();
@@ -157,9 +200,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const isImageModel = selectedModel.id === 'kontext' || selectedModel.id === 'nanobanana';
-
-    if (isImageModel && uploadedImages.length === 0) {
+    if (isImageModelSelected && uploadedImages.length === 0) {
         setError('The selected model requires at least one source image. Please upload one or provide a URL.');
         return;
     }
@@ -205,7 +246,7 @@ const App: React.FC = () => {
 
       // Logic for enhancement:
       // 1. If enhancement is enabled AND the model is not an image model...
-      if (isEnhanceEnabled && !isImageModel) {
+      if (isEnhanceEnabled && !isImageModelSelected) {
         // 2. ...AND a valid Gemini key exists, use Gemini for enhancement.
         if (isGeminiKeyValid && geminiApiKey) {
           setLoadingMessage('Enhancing prompt...');
@@ -250,7 +291,7 @@ const App: React.FC = () => {
         negative_prompt: '',
       };
 
-      if (isImageModel && uploadedImages.length > 0) {
+      if (isImageModelSelected && uploadedImages.length > 0) {
         const imageUrls = uploadedImages.map(img => img.url);
         const invalidUrl = imageUrls.find(url => !url.startsWith('http'));
         if (invalidUrl) {
@@ -299,7 +340,7 @@ const App: React.FC = () => {
       setLoadingMessage('');
       abortControllerRef.current = null;
     }
-  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages]);
+  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages, isImageModelSelected]);
   
   // Preset Handlers
   const handleSavePreset = (name: string) => {
@@ -307,7 +348,6 @@ const App: React.FC = () => {
       alert("Please enter a name for the preset.");
       return;
     }
-    const isImageModel = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
     const newPreset: Preset = {
       name: name.trim(),
       modelId: selectedModel?.id || '',
@@ -323,7 +363,7 @@ const App: React.FC = () => {
       nologo,
       nofeed,
       isPrivate,
-      images: isImageModel ? uploadedImages : undefined,
+      images: isImageModelSelected ? uploadedImages : undefined,
     };
 
     setPresets(prev => {
@@ -426,7 +466,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col">
       <Header />
       <main className="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-8">
-        <aside className="lg:w-5/12 xl:w-1/3 flex flex-col gap-6">
+        <aside ref={controlsRef} className="lg:w-5/12 xl:w-1/3 flex flex-col gap-6">
           <PromptControls
             prompt={prompt}
             setPrompt={setPrompt}
@@ -480,6 +520,8 @@ const App: React.FC = () => {
             lastRequestUrl={lastRequestUrl}
             onRetry={error ? handleGenerate : undefined}
             onCancel={isLoading ? handleCancelGeneration : undefined}
+            isImageModelSelected={isImageModelSelected}
+            onUseAsSource={handleUseAsSource}
           />
            <HistoryGallery
             history={history}
@@ -488,6 +530,8 @@ const App: React.FC = () => {
             onDelete={handleDeleteHistoryItem}
             onDownload={handleDownload}
             onView={handleViewHistoryItem}
+            isImageModelSelected={isImageModelSelected}
+            onUseAsSource={handleUseAsSource}
           />
         </section>
       </main>
