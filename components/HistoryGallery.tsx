@@ -34,7 +34,7 @@ const HistoryItem: React.FC<{
         }`}
       />
       <div 
-        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 flex items-center justify-center gap-2 ${
+        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 grid grid-cols-2 gap-2 place-content-center p-2 ${
             areControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         // Prevent click from bubbling up to the main div
