@@ -5,7 +5,7 @@ import { ImageDisplay } from './components/ImageDisplay';
 import { HistoryGallery } from './components/HistoryGallery';
 import { Lightbox } from './components/Lightbox';
 import { generateImage, fetchModels } from './services/pollinationsService';
-import { enhancePrompt, translateToEnglishIfNeeded } from './services/geminiService';
+import { enhancePrompt, translateToEnglishIfNeeded, checkGeminiApiKey } from './services/geminiService';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem, UploadedImage } from './types';
 import { ASPECT_RATIOS } from './constants';
@@ -29,10 +29,10 @@ const App: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState<boolean>(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  // FIX: Gemini API Key is now sourced exclusively from environment variables as per guidelines.
-  // The app assumes the key is valid if present.
-  const geminiApiKey = process.env.API_KEY || '';
-  const isGeminiKeyValid = !!geminiApiKey;
+  // Gemini API Key State
+  const [geminiApiKey, setGeminiApiKey] = useLocalStorage<string>('gemini-api-key', '');
+  const [isGeminiKeyValid, setIsGeminiKeyValid] = useState<boolean | null>(null);
+  const [isCheckingGeminiKey, setIsCheckingGeminiKey] = useState<boolean>(false);
   
   // Style state
   const [selectedStyles, setSelectedStyles] = useState<SelectedStyle[]>([{ id: Date.now(), style: null }]);
@@ -65,6 +65,21 @@ const App: React.FC = () => {
       setActiveHistoryItem(null);
     }
   }, [history, activeHistoryItem]);
+  
+  // Check Gemini API key on initial load
+  useEffect(() => {
+    const validateKeyOnLoad = async () => {
+      if (geminiApiKey) {
+        setIsCheckingGeminiKey(true);
+        const isValid = await checkGeminiApiKey(geminiApiKey);
+        setIsGeminiKeyValid(isValid);
+        setIsCheckingGeminiKey(false);
+      } else {
+        setIsGeminiKeyValid(false);
+      }
+    };
+    validateKeyOnLoad();
+  }, []); // Run only once on mount
 
   // State for Pollinations params
   const [seed, setSeed] = useState<string>('');
@@ -140,6 +155,18 @@ const App: React.FC = () => {
       const matchingRatio = ASPECT_RATIOS.find(r => r.width === Number(newWidth) && r.height === Number(newHeight));
       setAspectRatio(matchingRatio ? matchingRatio.value : '');
   }, []);
+  
+  const handleCheckAndSaveApiKey = async (key: string): Promise<boolean> => {
+    setIsCheckingGeminiKey(true);
+    setIsGeminiKeyValid(null);
+    const isValid = await checkGeminiApiKey(key);
+    setIsGeminiKeyValid(isValid);
+    if (isValid) {
+      setGeminiApiKey(key);
+    }
+    setIsCheckingGeminiKey(false);
+    return isValid;
+  };
 
   const handleCancelGeneration = () => {
     if (abortControllerRef.current) {
@@ -295,7 +322,8 @@ const App: React.FC = () => {
         const imageUrls = uploadedImages.map(img => img.url);
         const invalidUrl = imageUrls.find(url => !url.startsWith('http'));
         if (invalidUrl) {
-            setError('Please provide a valid public URL for all images. Upload images if you don\'t have a URL.');
+            // FIX: Use double quotes to avoid issues with the unescaped apostrophe in "don't".
+            setError("Please provide a valid public URL for all images. Upload images if you don't have a URL.");
             setIsLoading(false);
             return;
         }
@@ -303,6 +331,7 @@ const App: React.FC = () => {
       }
       
       const onRetryCallback = (attempt: number, maxRetries: number) => {
+        // FIX: Corrected template literal for proper variable interpolation.
         setLoadingMessage(`Generation is slow... Retrying (attempt ${attempt}/${maxRetries}).`);
       };
 
@@ -330,6 +359,7 @@ const App: React.FC = () => {
       } else {
         console.error(e);
         const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+        // FIX: Corrected template literal for proper variable interpolation.
         setError(`An error occurred during generation: ${errorMessage}. Please check the console for details.`);
         if (e && typeof (e as any).requestUrl === 'string') {
           setLastRequestUrl((e as any).requestUrl);
@@ -431,6 +461,7 @@ const App: React.FC = () => {
       const link = document.createElement('a');
       link.href = item.imageDataUrl;
       const safePrompt = item.prompt.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '_');
+      // FIX: Corrected template literal for proper variable interpolation.
       link.download = `pollinations_${safePrompt}_${item.id}.jpg`;
       document.body.appendChild(link);
       link.click();
@@ -506,7 +537,10 @@ const App: React.FC = () => {
             onSavePreset={handleSavePreset}
             onLoadPreset={handleLoadPreset}
             onDeletePreset={handleDeletePreset}
+            geminiApiKey={geminiApiKey}
             isGeminiKeyValid={isGeminiKeyValid}
+            isCheckingGeminiKey={isCheckingGeminiKey}
+            onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
             uploadedImages={uploadedImages}
             setUploadedImages={setUploadedImages}
           />

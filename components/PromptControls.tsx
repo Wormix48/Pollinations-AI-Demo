@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
-import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon } from './Icons';
+import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
 import { uploadImage, deleteImage } from '../services/imageHostService';
@@ -44,7 +44,10 @@ interface PromptControlsProps {
   onSavePreset: (name: string) => void;
   onLoadPreset: (name: string) => void;
   onDeletePreset: (name: string) => void;
-  isGeminiKeyValid: boolean;
+  geminiApiKey: string;
+  isGeminiKeyValid: boolean | null;
+  isCheckingGeminiKey: boolean;
+  onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
   uploadedImages: UploadedImage[];
   setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
 }
@@ -446,7 +449,10 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   onSavePreset,
   onLoadPreset,
   onDeletePreset,
+  geminiApiKey,
   isGeminiKeyValid,
+  isCheckingGeminiKey,
+  onCheckAndSaveApiKey,
   uploadedImages,
   setUploadedImages,
 }) => {
@@ -456,6 +462,15 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const [newPresetName, setNewPresetName] = useState('');
+  const [localApiKey, setLocalApiKey] = useState(geminiApiKey);
+
+  useEffect(() => {
+    setLocalApiKey(geminiApiKey);
+  }, [geminiApiKey]);
+
+  const handleApiKeySave = () => {
+    onCheckAndSaveApiKey(localApiKey);
+  };
 
   const isImageModelSelected = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
   
@@ -669,7 +684,46 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
         </div>
       </div>
       
-      {/* FIX: Removed API Key input section to comply with guidelines */}
+      <div className="px-6 py-4 border-t border-gray-700/50">
+        <h3 className="text-sm font-semibold text-gray-300 mb-2">Gemini API Key (Optional)</h3>
+        <p className="text-xs text-gray-400 mb-3">
+            Provide your own Gemini API key to enable faster, higher-quality prompt enhancement and translation.
+        </p>
+        <div className="flex items-center gap-2">
+            <div className="relative flex-grow">
+            <input
+                type="password"
+                value={localApiKey}
+                onChange={(e) => setLocalApiKey(e.target.value)}
+                placeholder="Enter your Gemini API Key"
+                className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 pr-10"
+                aria-label="Gemini API Key"
+            />
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                {isCheckingGeminiKey ? (
+                <LoadingSpinner className="w-5 h-5 text-gray-400" />
+                ) : isGeminiKeyValid === true ? (
+                <CheckIcon className="w-5 h-5 text-green-400" />
+                ) : isGeminiKeyValid === false && geminiApiKey ? (
+                <WarningIcon className="w-5 h-5 text-red-400" />
+                ) : null}
+            </div>
+            </div>
+            <button
+            onClick={handleApiKeySave}
+            disabled={isCheckingGeminiKey || localApiKey === geminiApiKey}
+            className="px-4 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+            {isCheckingGeminiKey ? 'Checking...' : 'Save'}
+            </button>
+        </div>
+        {isGeminiKeyValid === false && geminiApiKey && !isCheckingGeminiKey && (
+            <p className="text-xs text-red-400 mt-2">The provided API key is invalid.</p>
+        )}
+        {isGeminiKeyValid === true && (
+            <p className="text-xs text-green-400 mt-2">Gemini API key is valid and saved.</p>
+        )}
+     </div>
 
       <div className="px-6 py-4 border-t border-b border-gray-700/50">
         <h3 className="text-sm font-semibold text-gray-300 mb-4">Advanced Settings</h3>

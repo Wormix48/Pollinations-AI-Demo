@@ -2,18 +2,30 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getSystemInstruction = (imageModelId: string, stylePrompt?: string): string => {
-    let instruction = `You are an expert at writing creative, detailed, and artistic prompts for AI image generators. A user will provide a simple idea, and you must expand it into a single, descriptive paragraph. Do not add any extra text, explanations, or markdown. Only return the enhanced prompt text.`;
+    // Base instruction
+    let instruction = `You are an expert at writing creative, detailed, and artistic prompts for AI image generators. A user will provide a simple idea. Your task is to expand it into a single, optimized prompt for a specific AI model. Do not add any extra text, explanations, or markdown. Only return the final prompt text. The final prompt should be a reasonable length, not excessively long.`;
     
+    // Model-specific instructions
     if (imageModelId.toLowerCase().includes('flux')) {
-        instruction += `\nThe target image model is 'flux', which excels with highly descriptive, detailed, and narrative-style prompts. Focus on scene composition, lighting, mood, and fine details. Avoid simple lists of keywords.`;
+        instruction += `\n\n**Target Model: Flux.** This model excels with highly descriptive, narrative-style prompts written in natural language.
+- **DO:** Write a single, cohesive paragraph of about 2-4 sentences.
+- **DO:** Focus on scene composition, lighting, mood, atmosphere, and fine details.
+- **DO NOT:** Make the prompt excessively long.
+- **DO NOT:** Use comma-separated lists of keywords.
+- **Example:** Instead of "lion, crown, city, futuristic", write "A majestic lion with a crown of shimmering light sits enthroned amidst the towering, neon-lit skyscrapers of a futuristic metropolis, its gaze filled with ancient wisdom."`;
     } else if (imageModelId.toLowerCase().includes('turbo')) {
-        instruction += `\nThe target image model is 'turbo', which works best with a mix of descriptive phrases and specific keywords. Be concise but impactful.`;
+        instruction += `\n\n**Target Model: Turbo.** This model works best with a concise, impactful mix of descriptive phrases and specific keywords, separated by commas, similar to Stable Diffusion prompts.
+- **DO:** Use a comma-separated list of keywords and short descriptive phrases.
+- **DO:** Focus on key elements, style, and quality tags.
+- **DO NOT:** Write long narrative paragraphs.
+- **Example:** "majestic lion, glowing crown, futuristic city, neon lights, towering skyscrapers, highly detailed, cinematic lighting, 4k".`;
     } else {
-        instruction += `\nThe prompt should be well-suited for a modern, general-purpose AI image generator.`;
+        instruction += `\n\n**Target Model: General.** The prompt should be a well-suited, descriptive paragraph for a modern, general-purpose AI image generator.`;
     }
 
+    // Style integration instruction
     if (stylePrompt) {
-        instruction += `\n\nIt is crucial to preserve the following artistic style. Integrate it seamlessly into the enhanced prompt: "${stylePrompt}". The style is the most important component and should not be altered, only expanded upon.`;
+        instruction += `\n\n**Crucial Style Constraint:** The user has selected a specific artistic style. It is absolutely critical that you preserve this style with high fidelity. Integrate the following style description and keywords verbatim into your enhanced prompt: "${stylePrompt}". This style is the most important part of the request and must not be altered, rephrased, or diluted.`;
     }
     return instruction;
 };
