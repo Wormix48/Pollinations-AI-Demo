@@ -98,60 +98,6 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
         img.src = uploadedImages[0].url;
     }
   }, [uploadedImages, onAspectRatioChange, onDimensionChange]);
-<<<<<<< HEAD
-=======
-
-  const uploadFile = async (file: File): Promise<UploadedImage> => {
-    if (!file.type.startsWith('image/')) {
-        throw new Error('File is not an image.');
-    }
-
-    const MAX_FILE_SIZE_MB = 10;
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        throw new Error(`File "${file.name}" is too large (max ${MAX_FILE_SIZE_MB}MB).`);
-    }
-    
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await fetch('https://api.imgur.com/3/image', {
-        method: 'POST',
-        headers: {
-            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-        },
-        body: formData,
-    });
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-        const imageUrl = (data.data.link as string).replace(/\.jpeg$/, '.jpeg');
-        return { url: imageUrl, deletehash: data.data.deletehash };
-    } else {
-        const errorMessage = data?.data?.error || `HTTP error ${response.status}`;
-        throw new Error(`Upload failed for "${file.name}": ${errorMessage}`);
-    }
-  }
-  
-  const deleteFromImgur = async (deletehash: string) => {
-      try {
-        const response = await fetch(`https://api.imgur.com/3/image/${deletehash}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-          },
-        });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData?.data?.error || 'Failed to delete image from Imgur.');
-        }
-        console.log(`Image with deletehash ${deletehash} deleted from Imgur successfully.`);
-      } catch (error) {
-        console.error('Error deleting image from Imgur:', error);
-        // Optionally show an error to the user, for now logging is sufficient
-        setUploadError(`Could not delete image from Imgur. It may have already been removed. Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    };
->>>>>>> d6530ee3b31bb4309d0ffa6ed37bb3146c402b47
     
   const handleRemoveImage = async (indexToRemove: number) => {
     const imageToDelete = uploadedImages[indexToRemove];
@@ -236,14 +182,9 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
             handleRemoveImage(0);
         }
         
-<<<<<<< HEAD
         const imageUrl = url.replace(/\.jpeg$/, '.jpg');
         // When adding a URL, we don't have a deleteUrl.
         const newImage: UploadedImage = { url: imageUrl };
-=======
-        const imageUrl = url.replace(/\.jpeg$/, '.jpeg');
-        const newImage = { url: imageUrl };
->>>>>>> d6530ee3b31bb4309d0ffa6ed37bb3146c402b47
 
         if (isKontext) {
             setUploadedImages([newImage]);
