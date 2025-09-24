@@ -50,6 +50,11 @@ interface PromptControlsProps {
   onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
   uploadedImages: UploadedImage[];
   setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
+  showHighQuality: boolean;
+  isHighQuality: boolean;
+  setIsHighQuality: (enabled: boolean) => void;
+  resolutionMultiplier: number;
+  setResolutionMultiplier: (multiplier: number) => void;
 }
 
 interface MultiImageUploaderProps {
@@ -66,7 +71,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isKontext = selectedModel?.id === 'kontext';
+  const isKontext = selectedModel?.id.toLowerCase() === 'kontext';
 
 
   useEffect(() => {
@@ -92,7 +97,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
                 });
 
                 onAspectRatioChange(bestMatch.value);
-                onDimensionChange(String(bestMatch.width), String(bestMatch.height));
+                // The onAspectRatioChange in App.tsx will now handle the multiplier, so we don't need to call onDimensionChange here
             }
         };
         img.onerror = () => {
@@ -455,6 +460,11 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   onCheckAndSaveApiKey,
   uploadedImages,
   setUploadedImages,
+  showHighQuality,
+  isHighQuality,
+  setIsHighQuality,
+  resolutionMultiplier,
+  setResolutionMultiplier,
 }) => {
   const oneToOneRatio = ASPECT_RATIO_GROUPS.landscape.find(r => r.value === '1:1');
   const landscapeRatios = ASPECT_RATIO_GROUPS.landscape.filter(r => r.value !== '1:1');
@@ -464,6 +474,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const [newPresetName, setNewPresetName] = useState('');
   const [localApiKey, setLocalApiKey] = useState(geminiApiKey);
 
+  const prevMultiplierRef = useRef(resolutionMultiplier);
+
+  useEffect(() => {
+    prevMultiplierRef.current = resolutionMultiplier;
+  }, [resolutionMultiplier]);
+
   useEffect(() => {
     setLocalApiKey(geminiApiKey);
   }, [geminiApiKey]);
@@ -471,12 +487,27 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const handleApiKeySave = () => {
     onCheckAndSaveApiKey(localApiKey);
   };
+  
+  const handleMultiplierChange = (newMultiplier: number) => {
+    const prevMultiplier = prevMultiplierRef.current || 1;
+    const currentWidth = Number(width);
+    const currentHeight = Number(height);
 
-  const isImageModelSelected = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
+    const baseWidth = currentWidth / prevMultiplier;
+    const baseHeight = currentHeight / prevMultiplier;
+    
+    const newWidth = String(Math.round(baseWidth * newMultiplier));
+    const newHeight = String(Math.round(baseHeight * newMultiplier));
+
+    onDimensionChange(newWidth, newHeight);
+    setResolutionMultiplier(newMultiplier);
+  };
+
+  const isImageModelSelected = selectedModel ? ['kontext', 'nanobanana', 'seedream'].includes(selectedModel.name.toLowerCase()) : false;
   
   const promptPlaceholder =
     isImageModelSelected
-      ? 'Describe what you want to CHANGE in the uploaded image(s), e.g., "make the cat blue"'
+      ? 'Describe what you want to create, or what to change in the uploaded image(s)'
       : 'e.g., A majestic lion wearing a crown in a futuristic city';
 
   const handleAddStyle = () => {
@@ -599,29 +630,43 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           <label htmlFor="model" className="block text-sm font-medium text-gray-300 mb-2">
             3. Choose a Model
           </label>
-          <select
-            id="model"
-            value={selectedModel?.id || ''}
-            onChange={(e) => {
-              const model = models.find(m => m.id === e.target.value);
-              if (model) setSelectedModel(model);
-            }}
-            disabled={modelsLoading || !!modelsError}
-            className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-            aria-label="Select generation model"
-          >
-            {modelsLoading ? (
-              <option>Loading models...</option>
-            ) : modelsError ? (
-              <option>Error loading models</option>
-            ) : (
-              models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))
+          <div className="flex items-center gap-2">
+            <select
+              id="model"
+              value={selectedModel?.id || ''}
+              onChange={(e) => {
+                const model = models.find(m => m.id === e.target.value);
+                if (model) setSelectedModel(model);
+              }}
+              disabled={modelsLoading || !!modelsError}
+              className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+              aria-label="Select generation model"
+            >
+              {modelsLoading ? (
+                <option>Loading models...</option>
+              ) : modelsError ? (
+                <option>Error loading models</option>
+              ) : (
+                models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))
+              )}
+            </select>
+            {selectedModel?.name.toLowerCase() === 'seedream' && (
+              <select
+                value={resolutionMultiplier}
+                onChange={(e) => handleMultiplierChange(Number(e.target.value))}
+                className="bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                aria-label="Select resolution multiplier"
+              >
+                <option value={1}>1k</option>
+                <option value={2}>2k</option>
+                <option value={4}>4k</option>
+              </select>
             )}
-          </select>
+          </div>
           {modelsError && <p className="text-xs text-red-400 mt-1">{modelsError}</p>}
         </div>
          <div>
@@ -814,12 +859,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             <Toggle 
               label="Auto-enhance prompt" 
               id="enhance-prompt-toggle" 
-              checked={isImageModelSelected ? false : isEnhanceEnabled} 
+              checked={isEnhanceEnabled} 
               onChange={setIsEnhanceEnabled}
-              disabled={isImageModelSelected}
+              disabled={isImageModelSelected && uploadedImages.length > 0}
               tooltip={
-                isImageModelSelected
-                  ? "Enhancement is not available for image-to-image models like Kontext or Nanobanana."
+                (isImageModelSelected && uploadedImages.length > 0)
+                  ? "Enhancement is disabled when a source image is provided for an image model."
                   : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
               }
             />
@@ -827,6 +872,9 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />
             <Toggle label="Exclude from Feed" id="nofeed-toggle" checked={nofeed} onChange={setNofeed} />
             <Toggle label="Private Image" id="private-toggle" checked={isPrivate} onChange={setIsPrivate} />
+            {showHighQuality && (
+              <Toggle label="High Quality" id="high-quality-toggle" checked={isHighQuality} onChange={setIsHighQuality} />
+            )}
           </div>
         </div>
       </div>

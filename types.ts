@@ -16,6 +16,7 @@ export interface PollinationsImageParams {
   safe?: boolean;
   image?: string | string[];
   negative_prompt?: string;
+  quality?: string;
 }
 
 export interface GenerationResult {
@@ -54,6 +55,7 @@ export interface Preset {
   nofeed: boolean;
   isPrivate: boolean;
   images?: UploadedImage[];
+  resolutionMultiplier?: number;
 }
 
 // FIX: Add missing SavedPrompt interface

@@ -1,6 +1,8 @@
+
 import type { PollinationsImageParams, GenerationResult } from '../types';
 
 const API_BASE_URL = 'https://image.pollinations.ai';
+const SEEDREAM_BASE_URL = 'https://seedream.pollinations.ai';
 
 /**
  * Fetches the list of available models from the Pollinations.ai API.
@@ -43,10 +45,23 @@ export const generateImage = async (
     throw new Error('Prompt is required.');
   }
 
+  const mutableParams = { ...otherParams };
+  let baseUrl = API_BASE_URL;
+
+  const isSeedream = mutableParams.model?.toLowerCase().startsWith('seedream-');
+
+  if (isSeedream) {
+    baseUrl = SEEDREAM_BASE_URL;
+    const seedreamModelName = mutableParams.model!.replace('seedream-', '');
+    // Add seedream param, which is specific to this endpoint.
+    (mutableParams as any).seedream = seedreamModelName;
+    delete mutableParams.model; // Don't pass the original model param.
+  }
+
   const encodedPrompt = encodeURIComponent(prompt);
-  const url = new URL(`${API_BASE_URL}/prompt/${encodedPrompt}`);
+  const url = new URL(`${baseUrl}/prompt/${encodedPrompt}`);
   
-  Object.entries(otherParams).forEach(([key, value]) => {
+  Object.entries(mutableParams).forEach(([key, value]) => {
     if (value !== undefined && value !== null && !(typeof value === 'number' && isNaN(value))) {
        const paramValue = Array.isArray(value) ? value.join(',') : String(value);
        if (paramValue) {
@@ -98,6 +113,7 @@ export const generateImage = async (
 
     // If we haven't returned or thrown a fatal error yet, wait before the next attempt
     if (attempt < MAX_RETRIES) {
+      // FIX: Corrected variable name from `maxRetries` to `MAX_RETRIES` to match the defined constant.
       onRetry?.(attempt + 1, MAX_RETRIES);
       await sleep(INITIAL_DELAY_MS * attempt); // Wait 5s, 10s
     }

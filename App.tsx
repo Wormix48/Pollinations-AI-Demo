@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const [geminiApiKey, setGeminiApiKey] = useLocalStorage<string>('gemini-api-key', '');
   const [isGeminiKeyValid, setIsGeminiKeyValid] = useState<boolean | null>(null);
   const [isCheckingGeminiKey, setIsCheckingGeminiKey] = useState<boolean>(false);
+  const [resolutionMultiplier, setResolutionMultiplier] = useState<number>(1);
   
   // Style state
   const [selectedStyles, setSelectedStyles] = useState<SelectedStyle[]>([{ id: Date.now(), style: null }]);
@@ -53,6 +54,11 @@ const App: React.FC = () => {
   // Image-to-Image model source image(s) with optional delete hashes
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
 
+  // Hidden high quality toggle state
+  const [showHighQuality, setShowHighQuality] = useState(false);
+  const [isHighQuality, setIsHighQuality] = useState(false);
+  const keySequenceRef = useRef<string[]>([]);
+
   // Effect to sync active item with history from local storage
   useEffect(() => {
     if (history.length > 0) {
@@ -66,6 +72,13 @@ const App: React.FC = () => {
     }
   }, [history, activeHistoryItem]);
   
+  // Effect to reset multiplier when model changes
+  useEffect(() => {
+    if (selectedModel && selectedModel.name.toLowerCase() !== 'seedream') {
+      setResolutionMultiplier(1);
+    }
+  }, [selectedModel]);
+
   // Check Gemini API key on initial load
   useEffect(() => {
     const validateKeyOnLoad = async () => {
@@ -80,6 +93,30 @@ const App: React.FC = () => {
     };
     validateKeyOnLoad();
   }, []); // Run only once on mount
+
+    // Konami code listener for hidden feature
+  useEffect(() => {
+    const konamiCode = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight'];
+    
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (showHighQuality) return; // Already revealed
+
+      keySequenceRef.current.push(event.key);
+      // Keep the sequence buffer the same size as the code
+      if (keySequenceRef.current.length > konamiCode.length) {
+        keySequenceRef.current.shift();
+      }
+      
+      if (keySequenceRef.current.join(',') === konamiCode.join(',')) {
+        setShowHighQuality(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showHighQuality]);
 
   // State for Pollinations params
   const [seed, setSeed] = useState<string>('');
@@ -98,17 +135,17 @@ const App: React.FC = () => {
   const [presets, setPresets] = useLocalStorage<Preset[]>('generation-presets', []);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   
-  const isImageModelSelected = selectedModel?.id === 'kontext' || selectedModel?.id === 'nanobanana';
+  const isImageModelSelected = selectedModel ? ['kontext', 'nanobanana', 'seedream'].includes(selectedModel.name.toLowerCase()) : false;
 
   // Model-specific logic effects
   useEffect(() => {
-    // Clear image URL if model is changed from an image model
-    if (!isImageModelSelected) {
-      // Note: We don't delete from Imgur here, as the user might switch back.
+    // Clear image URL if model is changed from an image model to a non-image model
+    if (!isImageModelSelected && uploadedImages.length > 0) {
+      // Note: We don't delete from ImgBB here, as the user might switch back.
       // Deletion is handled by the user explicitly removing the image.
       setUploadedImages([]);
     }
-  }, [selectedModel, isImageModelSelected]);
+  }, [selectedModel, isImageModelSelected, uploadedImages.length]);
 
 
   useEffect(() => {
@@ -116,18 +153,33 @@ const App: React.FC = () => {
       try {
         setModelsLoading(true);
         const modelIds = await fetchModels();
-        const availableModels = modelIds.map(id => {
+        
+        const uniqueModels: GenerationModel[] = [];
+        let seedreamAdded = false;
+
+        for (const id of modelIds) {
           let name = id.charAt(0).toUpperCase() + id.slice(1);
           if (id.toLowerCase() === 'turbo') {
             name = 'Turbo (nsfw)';
           }
-          return { id, name };
-        });
 
-        setModels(availableModels);
-        if (availableModels.length > 0) {
-          // Default to first available model, or 'flux' if available
-          const defaultModel = availableModels.find(m => m.id === 'flux') || availableModels[0];
+          if (id.toLowerCase().startsWith('seedream-')) {
+            if (!seedreamAdded) {
+              // Add the first seedream model we find, rename it, and set a flag.
+              uniqueModels.push({ id, name: 'Seedream' });
+              seedreamAdded = true;
+            }
+            // Skip any other seedream models to prevent duplication.
+          } else {
+            uniqueModels.push({ id, name });
+          }
+        }
+
+        setModels(uniqueModels);
+        
+        if (uniqueModels.length > 0) {
+          // Default to nanobanana, then seedream, then flux, then the first model
+          const defaultModel = uniqueModels.find(m => m.name.toLowerCase() === 'nanobanana') || uniqueModels.find(m => m.name.toLowerCase() === 'seedream') || uniqueModels.find(m => m.id.toLowerCase() === 'flux') || uniqueModels[0];
           setSelectedModel(defaultModel);
         }
       } catch (err) {
@@ -144,19 +196,26 @@ const App: React.FC = () => {
     const selectedRatio = ASPECT_RATIOS.find(r => r.value === ratioValue);
     if (selectedRatio) {
       setAspectRatio(selectedRatio.value);
-      setWidth(String(selectedRatio.width));
-      setHeight(String(selectedRatio.height));
+      const multiplier = selectedModel?.name.toLowerCase() === 'seedream' ? resolutionMultiplier : 1;
+      setWidth(String(selectedRatio.width * multiplier));
+      setHeight(String(selectedRatio.height * multiplier));
     }
-  }, []);
+  }, [selectedModel, resolutionMultiplier]);
   
   const handleDimensionChange = useCallback((newWidth: string, newHeight: string) => {
       setWidth(newWidth);
       setHeight(newHeight);
-      const matchingRatio = ASPECT_RATIOS.find(r => r.width === Number(newWidth) && r.height === Number(newHeight));
+      
+      const multiplier = selectedModel?.name.toLowerCase() === 'seedream' ? resolutionMultiplier : 1;
+      const baseWidth = Number(newWidth) / multiplier;
+      const baseHeight = Number(newHeight) / multiplier;
+
+      const matchingRatio = ASPECT_RATIOS.find(r => r.width === baseWidth && r.height === baseHeight);
       setAspectRatio(matchingRatio ? matchingRatio.value : '');
-  }, []);
+  }, [selectedModel, resolutionMultiplier]);
   
   const handleCheckAndSaveApiKey = async (key: string): Promise<boolean> => {
+    // FIX: Corrected typo from setIsCheckingKey to setIsCheckingGeminiKey
     setIsCheckingGeminiKey(true);
     setIsGeminiKeyValid(null);
     const isValid = await checkGeminiApiKey(key);
@@ -164,6 +223,7 @@ const App: React.FC = () => {
     if (isValid) {
       setGeminiApiKey(key);
     }
+    // FIX: Corrected typo from setIsCheckingKey to setIsCheckingGeminiKey
     setIsCheckingGeminiKey(false);
     return isValid;
   };
@@ -227,11 +287,6 @@ const App: React.FC = () => {
       return;
     }
 
-    if (isImageModelSelected && uploadedImages.length === 0) {
-        setError('The selected model requires at least one source image. Please upload one or provide a URL.');
-        return;
-    }
-
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -271,24 +326,23 @@ const App: React.FC = () => {
       let promptToUse = promptWithStyle;
       let usePollinationsEnhance = false;
 
+      const isEnhancementDisabled = isImageModelSelected && uploadedImages.length > 0;
+
       // Logic for enhancement:
-      // 1. If enhancement is enabled AND the model is not an image model...
-      if (isEnhanceEnabled && !isImageModelSelected) {
-        // 2. ...AND a valid Gemini key exists, use Gemini for enhancement.
+      if (isEnhanceEnabled && !isEnhancementDisabled) {
+        // Use Gemini for enhancement if a valid key exists.
         if (isGeminiKeyValid && geminiApiKey) {
           setLoadingMessage('Enhancing prompt...');
           const combinedStylePrompt = activeStyles.map(style => style.prompt).join(', ');
           const { enhancedPrompt, enhancementFailed } = await enhancePrompt(promptWithStyle, selectedModel.id, geminiApiKey, combinedStylePrompt);
           promptToUse = enhancedPrompt;
           enhancementFailedForUI = enhancementFailed;
-          // Pollinations enhance is ALWAYS false when using Gemini enhance.
           usePollinationsEnhance = false; 
         } else {
-          // 3. ...but NO valid Gemini key exists, use Pollinations' built-in enhancer.
+          // Otherwise, use Pollinations' built-in enhancer.
           usePollinationsEnhance = true;
         }
       } else {
-        // 4. If enhancement is disabled or the model is an image model, do not use any enhancement.
         usePollinationsEnhance = false;
       }
       
@@ -301,6 +355,7 @@ const App: React.FC = () => {
       }
 
       const roundToMultipleOf8 = (num: number) => Math.round(num / 8) * 8;
+      // The multiplier is now accounted for in the width/height state directly.
       const finalWidth = roundToMultipleOf8(Number(width) || 1024);
       const finalHeight = roundToMultipleOf8(Number(height) || 1024);
 
@@ -316,13 +371,13 @@ const App: React.FC = () => {
         private: isPrivate,
         safe: isSafeMode,
         negative_prompt: '',
+        quality: isHighQuality ? 'high' : undefined,
       };
 
       if (isImageModelSelected && uploadedImages.length > 0) {
         const imageUrls = uploadedImages.map(img => img.url);
         const invalidUrl = imageUrls.find(url => !url.startsWith('http'));
         if (invalidUrl) {
-            // FIX: Use double quotes to avoid issues with the unescaped apostrophe in "don't".
             setError("Please provide a valid public URL for all images. Upload images if you don't have a URL.");
             setIsLoading(false);
             return;
@@ -331,7 +386,6 @@ const App: React.FC = () => {
       }
       
       const onRetryCallback = (attempt: number, maxRetries: number) => {
-        // FIX: Corrected template literal for proper variable interpolation.
         setLoadingMessage(`Generation is slow... Retrying (attempt ${attempt}/${maxRetries}).`);
       };
 
@@ -354,12 +408,9 @@ const App: React.FC = () => {
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         console.log('Generation cancelled by user.');
-        // This is not a real error, so we don't set an error state.
-        // The finally block will handle resetting the loading state.
       } else {
         console.error(e);
         const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-        // FIX: Corrected template literal for proper variable interpolation.
         setError(`An error occurred during generation: ${errorMessage}. Please check the console for details.`);
         if (e && typeof (e as any).requestUrl === 'string') {
           setLastRequestUrl((e as any).requestUrl);
@@ -370,7 +421,7 @@ const App: React.FC = () => {
       setLoadingMessage('');
       abortControllerRef.current = null;
     }
-  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages, isImageModelSelected]);
+  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages, isImageModelSelected, isHighQuality, resolutionMultiplier]);
   
   // Preset Handlers
   const handleSavePreset = (name: string) => {
@@ -394,6 +445,7 @@ const App: React.FC = () => {
       nofeed,
       isPrivate,
       images: isImageModelSelected ? uploadedImages : undefined,
+      resolutionMultiplier: selectedModel?.name.toLowerCase() === 'seedream' ? resolutionMultiplier : undefined,
     };
 
     setPresets(prev => {
@@ -434,6 +486,12 @@ const App: React.FC = () => {
     setIsPrivate(preset.isPrivate);
     setSelectedPreset(name);
     setUploadedImages(preset.images || []);
+
+    if (model?.name.toLowerCase() === 'seedream' && preset.resolutionMultiplier) {
+      setResolutionMultiplier(preset.resolutionMultiplier);
+    } else {
+      setResolutionMultiplier(1);
+    }
   };
 
   const handleDeletePreset = (name: string) => {
@@ -461,7 +519,6 @@ const App: React.FC = () => {
       const link = document.createElement('a');
       link.href = item.imageDataUrl;
       const safePrompt = item.prompt.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '_');
-      // FIX: Corrected template literal for proper variable interpolation.
       link.download = `pollinations_${safePrompt}_${item.id}.jpg`;
       document.body.appendChild(link);
       link.click();
@@ -489,7 +546,7 @@ const App: React.FC = () => {
 
   const handlePrevLightboxItem = () => {
     if (lightboxIndex !== null && lightboxIndex > 0) {
-      setLightboxIndex(lightboxIndex - 1); // FIX: Should be -1 to go to previous
+      setLightboxIndex(lightboxIndex - 1);
     }
   };
 
@@ -543,6 +600,11 @@ const App: React.FC = () => {
             onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
             uploadedImages={uploadedImages}
             setUploadedImages={setUploadedImages}
+            showHighQuality={showHighQuality}
+            isHighQuality={isHighQuality}
+            setIsHighQuality={setIsHighQuality}
+            resolutionMultiplier={resolutionMultiplier}
+            setResolutionMultiplier={setResolutionMultiplier}
           />
         </aside>
         <section className="flex-grow lg:w-7/12 xl:w-2/3">
