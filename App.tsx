@@ -4,6 +4,7 @@ import { PromptControls } from './components/PromptControls';
 import { ImageDisplay } from './components/ImageDisplay';
 import { HistoryGallery } from './components/HistoryGallery';
 import { Lightbox } from './components/Lightbox';
+import { ImageEditorModal } from './components/ImageEditorModal';
 import { generateImage, fetchModels } from './services/pollinationsService';
 import { enhancePrompt, translateToEnglishIfNeeded, checkGeminiApiKey } from './services/geminiService';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -53,6 +54,8 @@ const App: React.FC = () => {
   
   // Image-to-Image model source image(s) with optional delete hashes
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [editingImage, setEditingImage] = useState<{ index: number; url: string } | null>(null);
+
 
   // Hidden high quality toggle state
   const [showHighQuality, setShowHighQuality] = useState(false);
@@ -525,6 +528,51 @@ const App: React.FC = () => {
       document.body.removeChild(link);
     }
   };
+  
+  const handleEditImage = (index: number) => {
+    if (uploadedImages[index]) {
+      setEditingImage({ index, url: uploadedImages[index].url });
+    }
+  };
+
+  const handleEditorSave = async (imageDataUrl: string) => {
+    if (!editingImage) return;
+
+    const originalIndex = editingImage.index;
+    const oldImageToDelete = uploadedImages[originalIndex];
+
+    setEditingImage(null); // Close the modal immediately
+    setIsLoading(true);
+    setError(null);
+    setLoadingMessage('Uploading edited image...');
+
+    try {
+        const res = await fetch(imageDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `edited-${Date.now()}.png`, { type: 'image/png' });
+
+        const newUploadedImage = await uploadImage(file);
+
+        setUploadedImages(prev => {
+            const updated = [...prev];
+            updated[originalIndex] = newUploadedImage;
+            return updated;
+        });
+
+        // Delete the old image in the background, don't wait for it
+        if (oldImageToDelete.deleteUrl) {
+            deleteImage(oldImageToDelete).catch(err => {
+                console.warn('Failed to delete old source image after edit, continuing anyway:', err);
+            });
+        }
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
+        setError(`Failed to save edited image: ${errorMessage}`);
+    } finally {
+        setIsLoading(false);
+        setLoadingMessage('');
+    }
+  };
 
   // Lightbox Handlers
   const handleViewHistoryItem = (id: number) => {
@@ -600,6 +648,7 @@ const App: React.FC = () => {
             onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
             uploadedImages={uploadedImages}
             setUploadedImages={setUploadedImages}
+            onEditImage={handleEditImage}
             showHighQuality={showHighQuality}
             isHighQuality={isHighQuality}
             setIsHighQuality={setIsHighQuality}
@@ -639,6 +688,14 @@ const App: React.FC = () => {
           onPrev={handlePrevLightboxItem}
           hasNext={lightboxIndex < history.length - 1}
           hasPrev={lightboxIndex > 0}
+        />
+      )}
+      {editingImage && (
+        <ImageEditorModal
+          isOpen={!!editingImage}
+          onClose={() => setEditingImage(null)}
+          imageUrl={editingImage.url}
+          onSave={handleEditorSave}
         />
       )}
     </div>

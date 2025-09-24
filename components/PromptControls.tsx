@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
-import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon } from './Icons';
+import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
 import { uploadImage, deleteImage } from '../services/imageHostService';
@@ -50,6 +50,7 @@ interface PromptControlsProps {
   onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
   uploadedImages: UploadedImage[];
   setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
+  onEditImage: (index: number) => void;
   showHighQuality: boolean;
   isHighQuality: boolean;
   setIsHighQuality: (enabled: boolean) => void;
@@ -63,16 +64,30 @@ interface MultiImageUploaderProps {
   onAspectRatioChange: (ratio: string) => void;
   onDimensionChange: (width: string, height: string) => void;
   selectedModel: GenerationModel | null;
+  onEdit: (index: number) => void;
 }
 
 
-const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel }) => {
+const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel, onEdit }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
+  const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploaderRef = useRef<HTMLDivElement>(null);
   const isKontext = selectedModel?.id.toLowerCase() === 'kontext';
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (uploaderRef.current && !uploaderRef.current.contains(event.target as Node)) {
+        setActiveImageIndex(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     // Set aspect ratio based on the *first* image added
@@ -207,21 +222,39 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   };
   
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={uploaderRef} className="flex flex-col gap-3">
       <label className="text-sm font-medium text-gray-300">Source Image{isKontext ? '' : '(s)'} (URL or Upload)</label>
       
       {uploadedImages.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
             {uploadedImages.map((image, index) => (
-                <div key={index} className="relative group">
-                    <img src={image.url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover rounded-md aspect-square"/>
-                    <button 
-                      onClick={() => handleRemoveImage(index)}
-                      className="absolute top-1 right-1 p-1 bg-black/60 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Remove image"
+                <div 
+                  key={index} 
+                  className="relative aspect-square"
+                  onClick={() => setActiveImageIndex(prev => prev === index ? null : index)}
+                >
+                    <img src={image.url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover rounded-md cursor-pointer"/>
+                    <div 
+                      className={`absolute inset-0 bg-black/60 transition-opacity flex items-center justify-center gap-2 ${activeImageIndex === index ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                        <CloseIcon className="w-4 h-4" />
-                    </button>
+                      <button 
+                        onClick={() => onEdit(index)}
+                        className="p-2 bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
+                        title="Edit image"
+                        aria-label="Edit image"
+                      >
+                          <EditIcon className="w-5 h-5" />
+                      </button>
+                      <button 
+                        onClick={() => handleRemoveImage(index)}
+                        className="p-2 bg-gray-900/70 text-red-400 hover:text-red-300 rounded-full transition-colors"
+                        title="Remove image"
+                        aria-label="Remove image"
+                      >
+                          <CloseIcon className="w-5 h-5" />
+                      </button>
+                    </div>
                 </div>
             ))}
           </div>
@@ -460,6 +493,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   onCheckAndSaveApiKey,
   uploadedImages,
   setUploadedImages,
+  onEditImage,
   showHighQuality,
   isHighQuality,
   setIsHighQuality,
@@ -589,6 +623,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             onAspectRatioChange={onAspectRatioChange}
             onDimensionChange={onDimensionChange}
             selectedModel={selectedModel}
+            onEdit={onEditImage}
           />
         )}
 
