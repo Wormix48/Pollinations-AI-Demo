@@ -1,9 +1,47 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
-import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon } from './Icons';
+import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon, ChevronDownIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
-import { uploadImage, deleteImage } from '../services/imageHostService';
+import { deleteImage } from '../services/imageHostService';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+
+interface CollapsibleSectionProps {
+  title: string;
+  children: React.ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, children, isOpen, onToggle }) => {
+  const uniqueId = title.replace(/\s+/g, '-').toLowerCase();
+
+  return (
+    <div className="border-b border-gray-700/50 last:border-b-0">
+      <h3 id={`collapsible-header-${uniqueId}`} className="text-base font-semibold text-gray-200">
+        <button
+          onClick={onToggle}
+          className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-700/30 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          aria-expanded={isOpen}
+          aria-controls={`collapsible-panel-${uniqueId}`}
+        >
+          <span>{title}</span>
+          <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </h3>
+      {isOpen && (
+        <div 
+          id={`collapsible-panel-${uniqueId}`}
+          role="region"
+          aria-labelledby={`collapsible-header-${uniqueId}`}
+          className="px-4 pb-4 animate-fade-in-down"
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface PromptControlsProps {
   prompt: string;
@@ -50,6 +88,7 @@ interface PromptControlsProps {
   onCheckAndSaveApiKey: (key: string) => Promise<boolean>;
   uploadedImages: UploadedImage[];
   setUploadedImages: (images: UploadedImage[] | ((prev: UploadedImage[]) => UploadedImage[])) => void;
+  onAddNewImage: (url: string) => void;
   onEditImage: (index: number) => void;
   showHighQuality: boolean;
   isHighQuality: boolean;
@@ -65,12 +104,11 @@ interface MultiImageUploaderProps {
   onDimensionChange: (width: string, height: string) => void;
   selectedModel: GenerationModel | null;
   onEdit: (index: number) => void;
+  onAddNewImage: (url: string) => void;
 }
 
 
-const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel, onEdit }) => {
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel, onEdit, onAddNewImage }) => {
   const [urlInput, setUrlInput] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -140,44 +178,23 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   };
 
 
-  const handleUpload = async (files: FileList | null) => {
+  const handleUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
-    const validFiles = Array.from(files).filter(file => file instanceof File);
+    const validFile = Array.from(files).find(file => file instanceof File);
+    if (!validFile) return;
 
-    if (validFiles.length === 0) {
-      return;
-    }
-    
-    setIsUploading(true);
-    setUploadError(null);
-
-    if (isKontext && uploadedImages.length > 0) {
-      // For single-image models, remove the existing image before uploading a new one.
-      await handleRemoveImage(0);
-    }
-
-    const filesToProcess = isKontext ? [validFiles[0]] : validFiles;
-    const uploadPromises = filesToProcess.map(file => uploadImage(file));
-    
-    try {
-      const newImages = await Promise.all(uploadPromises);
-      if (isKontext) {
-        setUploadedImages(newImages);
-      } else {
-        setUploadedImages(prev => [...prev, ...newImages]);
-      }
-    } catch(error) {
-       console.error('Image upload failed:', error);
-       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-       if (errorMessage.toLowerCase().includes('failed to fetch')) {
-          setUploadError('Upload failed: Could not connect to the image host. This can be a network issue, CORS block, or the service may be down.');
-      } else {
-          setUploadError(`Upload failed: ${errorMessage}`);
-      }
-    } finally {
-        setIsUploading(false);
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+        if (typeof reader.result === 'string') {
+            onAddNewImage(reader.result);
+        }
+    };
+    reader.onerror = (error) => {
+        console.error("File reading failed:", error);
+        alert('Failed to read the selected file.');
+    };
+    reader.readAsDataURL(validFile);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,7 +206,6 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isUploading) return;
     handleUpload(e.dataTransfer.files);
   };
 
@@ -201,23 +217,10 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   const handleAddUrl = () => {
     const url = urlInput.trim();
     if(url.startsWith('http')) {
-        if (isKontext && uploadedImages.length > 0) {
-            handleRemoveImage(0);
-        }
-        
-        const imageUrl = url.replace(/\.jpeg$/, '.jpg');
-        // When adding a URL, we don't have a deleteUrl.
-        const newImage: UploadedImage = { url: imageUrl };
-
-        if (isKontext) {
-            setUploadedImages([newImage]);
-        } else {
-            setUploadedImages(prev => [...prev, newImage]);
-        }
+        onAddNewImage(url);
         setUrlInput('');
-        setUploadError(null);
     } else {
-        setUploadError('Please enter a valid URL starting with http/https.');
+        alert('Please enter a valid URL starting with http/https.');
     }
   };
   
@@ -280,7 +283,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
 
       <div 
         className="relative border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors"
-        onClick={() => !isUploading && fileInputRef.current?.click()}
+        onClick={() => fileInputRef.current?.click()}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
@@ -289,30 +292,21 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
           ref={fileInputRef}
           onChange={handleFileChange}
           accept="image/*"
-          multiple={!isKontext}
+          multiple={false}
           className="hidden"
-          disabled={isUploading}
         />
-        {isUploading ? (
-            <div className="flex flex-col items-center justify-center gap-2">
-                <LoadingSpinner className="w-8 h-8 text-indigo-400" />
-                <p className="text-sm text-gray-400">Uploading to ImgBB...</p>
-            </div>
-        ) : (
-            <div className="flex flex-col items-center justify-center gap-2">
-                <UploadIcon className="w-8 h-8 text-gray-500" />
-                <p className="text-sm text-gray-400">
-                    <span className="font-semibold text-indigo-400">Click to upload</span> or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">PNG, JPG, GIF (Max 10MB)</p>
-            </div>
-        )}
+        <div className="flex flex-col items-center justify-center gap-2">
+            <UploadIcon className="w-8 h-8 text-gray-500" />
+            <p className="text-sm text-gray-400">
+                <span className="font-semibold text-indigo-400">Click to upload</span> or drag and drop
+            </p>
+            <p className="text-xs text-gray-500">Image will open in editor before use</p>
+        </div>
       </div>
       <p className="text-xs text-yellow-400/80 text-center mt-1 px-4">
         <span className="uppercase font-semibold block">Images are uploaded to ImgBB for processing. Do not upload confidential data.</span>
         <span className="block mt-1">Clicking '×' on an image permanently deletes it from ImgBB.</span>
       </p>
-      {uploadError && <p className="text-xs text-red-400 mt-1">{uploadError}</p>}
     </div>
   );
 };
@@ -493,6 +487,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   onCheckAndSaveApiKey,
   uploadedImages,
   setUploadedImages,
+  onAddNewImage,
   onEditImage,
   showHighQuality,
   isHighQuality,
@@ -507,8 +502,28 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   const dragOverItem = useRef<number | null>(null);
   const [newPresetName, setNewPresetName] = useState('');
   const [localApiKey, setLocalApiKey] = useState(geminiApiKey);
-
   const prevMultiplierRef = useRef(resolutionMultiplier);
+
+  interface PanelState {
+    idea: boolean;
+    styles: boolean;
+    model: boolean;
+    presets: boolean;
+    gemini: boolean;
+    advanced: boolean;
+  }
+  const [panelsOpen, setPanelsOpen] = useLocalStorage<PanelState>('prompt-panels-open', {
+    idea: true,
+    styles: true,
+    model: true,
+    presets: true,
+    gemini: true,
+    advanced: true,
+  });
+
+  const togglePanel = (panel: keyof PanelState) => {
+    setPanelsOpen(prev => ({ ...prev, [panel]: !prev[panel] }));
+  };
 
   useEffect(() => {
     prevMultiplierRef.current = resolutionMultiplier;
@@ -597,40 +612,38 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   };
   
   return (
-    <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 flex flex-col gap-4 h-full">
-      <div className="p-6 flex flex-col gap-4">
-        <div>
-          <label htmlFor="prompt" className="block text-sm font-medium text-gray-300 mb-2">
-            1. Enter Your Idea
-          </label>
-          <div className="relative">
-            <textarea
-              id="prompt"
-              rows={5}
-              className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 resize-none placeholder-gray-500"
-              placeholder={promptPlaceholder}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              aria-label="Image generation prompt"
-            />
+    <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 flex flex-col h-full overflow-hidden">
+      <div className="flex-grow overflow-y-auto">
+        <CollapsibleSection title="1. Enter Your Idea" isOpen={panelsOpen.idea} onToggle={() => togglePanel('idea')}>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="relative">
+                <textarea
+                  id="prompt"
+                  rows={5}
+                  className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 resize-none placeholder-gray-500"
+                  placeholder={promptPlaceholder}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  aria-label="Image generation prompt"
+                />
+              </div>
+            </div>
+            {isImageModelSelected && (
+              <MultiImageUploader 
+                uploadedImages={uploadedImages} 
+                setUploadedImages={setUploadedImages}
+                onAspectRatioChange={onAspectRatioChange}
+                onDimensionChange={onDimensionChange}
+                selectedModel={selectedModel}
+                onEdit={onEditImage}
+                onAddNewImage={onAddNewImage}
+              />
+            )}
           </div>
-        </div>
-        
-        {isImageModelSelected && (
-          <MultiImageUploader 
-            uploadedImages={uploadedImages} 
-            setUploadedImages={setUploadedImages}
-            onAspectRatioChange={onAspectRatioChange}
-            onDimensionChange={onDimensionChange}
-            selectedModel={selectedModel}
-            onEdit={onEditImage}
-          />
-        )}
+        </CollapsibleSection>
 
-        <div>
-           <label className="block text-sm font-medium text-gray-300 mb-2">
-            2. Choose Style(s) (Optional)
-          </label>
+        <CollapsibleSection title="2. Choose Style(s)" isOpen={panelsOpen.styles} onToggle={() => togglePanel('styles')}>
           <div className="flex flex-col gap-3">
             {selectedStyles.map((item, index) => (
                <StyleSelector
@@ -660,11 +673,9 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               </button>
             )}
           </div>
-        </div>
-        <div>
-          <label htmlFor="model" className="block text-sm font-medium text-gray-300 mb-2">
-            3. Choose a Model
-          </label>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="3. Choose a Model" isOpen={panelsOpen.model} onToggle={() => togglePanel('model')}>
           <div className="flex items-center gap-2">
             <select
               id="model"
@@ -703,11 +714,9 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             )}
           </div>
           {modelsError && <p className="text-xs text-red-400 mt-1">{modelsError}</p>}
-        </div>
-         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            4. Presets (Save/Load Settings)
-          </label>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="4. Presets" isOpen={panelsOpen.presets} onToggle={() => togglePanel('presets')}>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2 items-center">
               <select
@@ -761,160 +770,160 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      </div>
-      
-      <div className="px-6 py-4 border-t border-gray-700/50">
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">Gemini API Key (Optional)</h3>
-        <p className="text-xs text-gray-400 mb-3">
-            Provide your own Gemini API key to enable faster, higher-quality prompt enhancement and translation.
-        </p>
-        <div className="flex items-center gap-2">
-            <div className="relative flex-grow">
-            <input
-                type="password"
-                value={localApiKey}
-                onChange={(e) => setLocalApiKey(e.target.value)}
-                placeholder="Enter your Gemini API Key"
-                className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 pr-10"
-                aria-label="Gemini API Key"
-            />
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                {isCheckingGeminiKey ? (
-                <LoadingSpinner className="w-5 h-5 text-gray-400" />
-                ) : isGeminiKeyValid === true ? (
-                <CheckIcon className="w-5 h-5 text-green-400" />
-                ) : isGeminiKeyValid === false && geminiApiKey ? (
-                <WarningIcon className="w-5 h-5 text-red-400" />
-                ) : null}
+        </CollapsibleSection>
+        
+        <CollapsibleSection title="Gemini API Key" isOpen={panelsOpen.gemini} onToggle={() => togglePanel('gemini')}>
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">
+                Provide your own Gemini API key to enable faster, higher-quality prompt enhancement and translation.
+            </p>
+            <div className="flex items-center gap-2">
+                <div className="relative flex-grow">
+                <input
+                    type="password"
+                    value={localApiKey}
+                    onChange={(e) => setLocalApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API Key"
+                    className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 pr-10"
+                    aria-label="Gemini API Key"
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                    {isCheckingGeminiKey ? (
+                    <LoadingSpinner className="w-5 h-5 text-gray-400" />
+                    ) : isGeminiKeyValid === true ? (
+                    <CheckIcon className="w-5 h-5 text-green-400" />
+                    ) : isGeminiKeyValid === false && geminiApiKey ? (
+                    <WarningIcon className="w-5 h-5 text-red-400" />
+                    ) : null}
+                </div>
+                </div>
+                <button
+                onClick={handleApiKeySave}
+                disabled={isCheckingGeminiKey || localApiKey === geminiApiKey}
+                className="px-4 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                {isCheckingGeminiKey ? 'Checking...' : 'Save'}
+                </button>
             </div>
-            </div>
-            <button
-            onClick={handleApiKeySave}
-            disabled={isCheckingGeminiKey || localApiKey === geminiApiKey}
-            className="px-4 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-            {isCheckingGeminiKey ? 'Checking...' : 'Save'}
-            </button>
-        </div>
-        {isGeminiKeyValid === false && geminiApiKey && !isCheckingGeminiKey && (
-            <p className="text-xs text-red-400 mt-2">The provided API key is invalid.</p>
-        )}
-        {isGeminiKeyValid === true && (
-            <p className="text-xs text-green-400 mt-2">Gemini API key is valid and saved.</p>
-        )}
-     </div>
-
-      <div className="px-6 py-4 border-t border-b border-gray-700/50">
-        <h3 className="text-sm font-semibold text-gray-300 mb-4">Advanced Settings</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2">Aspect Ratio</label>
-            <div className="flex flex-col gap-3 mb-3">
-              {oneToOneRatio && (
-                 <AspectRatioButton 
-                    ratio={oneToOneRatio} 
-                    currentRatio={aspectRatio} 
-                    onClick={onAspectRatioChange} 
-                  />
-              )}
-              <div className="grid grid-cols-5 gap-2">
-                {landscapeRatios.map((landscapeRatio, index) => {
-                  const portraitRatio = portraitRatios[index];
-                  return (
-                    <div key={landscapeRatio.value} className="flex flex-col gap-2">
-                      <AspectRatioButton 
-                        ratio={landscapeRatio} 
-                        currentRatio={aspectRatio} 
-                        onClick={onAspectRatioChange} 
-                      />
-                      {portraitRatio && (
+            {isGeminiKeyValid === false && geminiApiKey && !isCheckingGeminiKey && (
+                <p className="text-xs text-red-400 mt-2">The provided API key is invalid.</p>
+            )}
+            {isGeminiKeyValid === true && (
+                <p className="text-xs text-green-400 mt-2">Gemini API key is valid and saved.</p>
+            )}
+          </div>
+        </CollapsibleSection>
+        
+        <CollapsibleSection title="Advanced Settings" isOpen={panelsOpen.advanced} onToggle={() => togglePanel('advanced')}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-2">Aspect Ratio</label>
+              <div className="flex flex-col gap-3 mb-3">
+                {oneToOneRatio && (
+                   <AspectRatioButton 
+                      ratio={oneToOneRatio} 
+                      currentRatio={aspectRatio} 
+                      onClick={onAspectRatioChange} 
+                    />
+                )}
+                <div className="grid grid-cols-5 gap-2">
+                  {landscapeRatios.map((landscapeRatio, index) => {
+                    const portraitRatio = portraitRatios[index];
+                    return (
+                      <div key={landscapeRatio.value} className="flex flex-col gap-2">
                         <AspectRatioButton 
-                          ratio={portraitRatio} 
+                          ratio={landscapeRatio} 
                           currentRatio={aspectRatio} 
                           onClick={onAspectRatioChange} 
                         />
-                      )}
-                    </div>
-                  );
-                })}
+                        {portraitRatio && (
+                          <AspectRatioButton 
+                            ratio={portraitRatio} 
+                            currentRatio={aspectRatio} 
+                            onClick={onAspectRatioChange} 
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                  <div>
+                       <input 
+                          type="number" 
+                          id="width" 
+                          value={width} 
+                          onChange={(e) => onDimensionChange(e.target.value, height)} 
+                          placeholder="Width"
+                          className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                          aria-label="Image width"
+                        />
+                  </div>
+                   <div>
+                       <input 
+                          type="number" 
+                          id="height" 
+                          value={height} 
+                          onChange={(e) => onDimensionChange(width, e.target.value)} 
+                          placeholder="Height"
+                          className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                          aria-label="Image height"
+                        />
+                  </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-                <div>
-                     <input 
-                        type="number" 
-                        id="width" 
-                        value={width} 
-                        onChange={(e) => onDimensionChange(e.target.value, height)} 
-                        placeholder="Width"
-                        className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                        aria-label="Image width"
-                      />
-                </div>
-                 <div>
-                     <input 
-                        type="number" 
-                        id="height" 
-                        value={height} 
-                        onChange={(e) => onDimensionChange(width, e.target.value)} 
-                        placeholder="Height"
-                        className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                        aria-label="Image height"
-                      />
-                </div>
+            <div>
+              <label htmlFor="seed" className="block text-xs font-medium text-gray-400 mb-1">Seed</label>
+              <div className="flex items-center gap-2">
+                 <div className="flex items-center rounded-md bg-gray-900/80 border border-gray-600">
+                    <button onClick={() => setSeedMode('random')} className={`px-2 py-1.5 text-xs rounded-l-md ${seedMode === 'random' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Random</button>
+                    <button onClick={() => setSeedMode('manual')} className={`px-2 py-1.5 text-xs rounded-r-md ${seedMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Manual</button>
+                 </div>
+                <input 
+                  type="text" 
+                  id="seed" 
+                  value={seed} 
+                  onChange={(e) => setSeed(e.target.value.replace(/\D/g, ''))} 
+                  disabled={seedMode === 'random'} 
+                  placeholder={seedMode === 'random' ? 'Randomly generated' : 'Enter a number'}
+                  className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-800/70 disabled:cursor-not-allowed"
+                />
+              </div>
             </div>
-          </div>
-          <div>
-            <label htmlFor="seed" className="block text-xs font-medium text-gray-400 mb-1">Seed</label>
-            <div className="flex items-center gap-2">
-               <div className="flex items-center rounded-md bg-gray-900/80 border border-gray-600">
-                  <button onClick={() => setSeedMode('random')} className={`px-2 py-1.5 text-xs rounded-l-md ${seedMode === 'random' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Random</button>
-                  <button onClick={() => setSeedMode('manual')} className={`px-2 py-1.5 text-xs rounded-r-md ${seedMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Manual</button>
-               </div>
-              <input 
-                type="text" 
-                id="seed" 
-                value={seed} 
-                onChange={(e) => setSeed(e.target.value.replace(/\D/g, ''))} 
-                disabled={seedMode === 'random'} 
-                placeholder={seedMode === 'random' ? 'Randomly generated' : 'Enter a number'}
-                className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-800/70 disabled:cursor-not-allowed"
+            <div className="space-y-3 pt-2">
+              <Toggle 
+                label="Translate prompt to English" 
+                id="translate-toggle" 
+                checked={isTranslateEnabled} 
+                onChange={setIsTranslateEnabled}
+                tooltip={!isGeminiKeyValid ? "Uses a public translation service when Gemini API key is not set." : "Uses Gemini API for translation."}
               />
+              <Toggle 
+                label="Auto-enhance prompt" 
+                id="enhance-prompt-toggle" 
+                checked={isEnhanceEnabled} 
+                onChange={setIsEnhanceEnabled}
+                disabled={isImageModelSelected && uploadedImages.length > 0}
+                tooltip={
+                  (isImageModelSelected && uploadedImages.length > 0)
+                    ? "Enhancement is disabled when a source image is provided for an image model."
+                    : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
+                }
+              />
+              <Toggle label="Safe Mode" id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
+              <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />
+              <Toggle label="Exclude from Feed" id="nofeed-toggle" checked={nofeed} onChange={setNofeed} />
+              <Toggle label="Private Image" id="private-toggle" checked={isPrivate} onChange={setIsPrivate} />
+              {showHighQuality && (
+                <Toggle label="High Quality" id="high-quality-toggle" checked={isHighQuality} onChange={setIsHighQuality} />
+              )}
             </div>
           </div>
-          <div className="space-y-3 pt-2">
-            <Toggle 
-              label="Translate prompt to English" 
-              id="translate-toggle" 
-              checked={isTranslateEnabled} 
-              onChange={setIsTranslateEnabled}
-              tooltip={!isGeminiKeyValid ? "Uses a public translation service when Gemini API key is not set." : "Uses Gemini API for translation."}
-            />
-            <Toggle 
-              label="Auto-enhance prompt" 
-              id="enhance-prompt-toggle" 
-              checked={isEnhanceEnabled} 
-              onChange={setIsEnhanceEnabled}
-              disabled={isImageModelSelected && uploadedImages.length > 0}
-              tooltip={
-                (isImageModelSelected && uploadedImages.length > 0)
-                  ? "Enhancement is disabled when a source image is provided for an image model."
-                  : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
-              }
-            />
-            <Toggle label="Safe Mode" id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
-            <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />
-            <Toggle label="Exclude from Feed" id="nofeed-toggle" checked={nofeed} onChange={setNofeed} />
-            <Toggle label="Private Image" id="private-toggle" checked={isPrivate} onChange={setIsPrivate} />
-            {showHighQuality && (
-              <Toggle label="High Quality" id="high-quality-toggle" checked={isHighQuality} onChange={setIsHighQuality} />
-            )}
-          </div>
-        </div>
+        </CollapsibleSection>
       </div>
 
-      <div className="mt-auto p-6">
+      <div className="mt-auto p-6 border-t border-gray-700/50 flex-shrink-0">
         <button
           onClick={onGenerate}
           disabled={isLoading || modelsLoading || (!prompt.trim() && selectedStyles.every(item => item.style === null)) || !selectedModel}

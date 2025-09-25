@@ -20,11 +20,16 @@
             animation: {
               'fade-in': 'fadeIn 0.5s ease-in-out',
               'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-in-down': 'fadeInDown 0.3s ease-out',
             },
             keyframes: {
               fadeIn: {
                 '0%': { opacity: 0 },
                 '100%': { opacity: 1 },
+              },
+              fadeInDown: {
+                '0%': { opacity: 0, transform: 'translateY(-10px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
               },
             }
           }
@@ -46,11 +51,9 @@
 </script>
 
 <link rel="stylesheet" href="/index.css">
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-gray-900 text-white font-sans">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>

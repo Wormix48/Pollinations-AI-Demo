@@ -74,3 +74,69 @@ export interface GenerationHistoryItem {
   translationUsedFallback: boolean;
   enhancementFailed: boolean;
 }
+
+// --- Image Editor Types ---
+
+export type Tool = 'brush' | 'eraser' | 'move' | 'crop' | 'text' | 'rectangle';
+
+export type InteractionType =
+  | 'draw'
+  | 'move'
+  | 'scale-br'
+  | 'crop-move'
+  | 'crop-t'
+  | 'crop-b'
+  | 'crop-l'
+  | 'crop-r'
+  | 'crop-tl'
+  | 'crop-tr'
+  | 'crop-bl'
+  | 'crop-br'
+  | 'pan'
+  | 'pinch'
+  | 'draw-rect';
+
+export interface Layer {
+  id: number;
+  name: string;
+  canvas: HTMLCanvasElement;
+  visible: boolean;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+export interface InteractionState {
+  type: InteractionType;
+  layerId?: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  original: {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    scale?: number;
+  };
+  initialPinch?: {
+    dist: number;
+    zoom: number;
+  };
+  snapshot?: ImageData;
+  snapshotCanvas?: HTMLCanvasElement;
+  strokePoints?: { x: number; y: number }[];
+}
+
+export interface TextPromptState {
+  visible: boolean;
+  value: string;
+  x: number;
+  y: number;
+}
+
+export interface CanvasSize {
+  width: number;
+  height: number;
+}

@@ -10,7 +10,7 @@ import { enhancePrompt, translateToEnglishIfNeeded, checkGeminiApiKey } from './
 import { useLocalStorage } from './hooks/useLocalStorage';
 import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem, UploadedImage } from './types';
 import { ASPECT_RATIOS } from './constants';
-import { uploadImage, deleteImage } from './services/imageHostService';
+import { uploadImageWithVerification, deleteImage } from './services/imageHostService';
 
 const blobToDataURL = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -54,6 +54,7 @@ const App: React.FC = () => {
   
   // Image-to-Image model source image(s) with optional delete hashes
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [imageToEditBeforeUpload, setImageToEditBeforeUpload] = useState<string | null>(null);
   const [editingImage, setEditingImage] = useState<{ index: number; url: string } | null>(null);
 
 
@@ -250,7 +251,7 @@ const App: React.FC = () => {
         const blob = await res.blob();
         const file = new File([blob], `source-${Date.now()}.png`, { type: blob.type });
 
-        const newUploadedImage = await uploadImage(file);
+        const newUploadedImage = await uploadImageWithVerification(file);
         setUploadedImages([newUploadedImage]); // Update UI with new image first
 
         // Attempt to delete the old source image(s) in the background.
@@ -529,13 +530,55 @@ const App: React.FC = () => {
     }
   };
   
+  const handleAddNewImage = (url: string) => {
+    setImageToEditBeforeUpload(url);
+  };
+
   const handleEditImage = (index: number) => {
     if (uploadedImages[index]) {
       setEditingImage({ index, url: uploadedImages[index].url });
     }
   };
 
-  const handleEditorSave = async (imageDataUrl: string) => {
+  const handleSaveAndUpload = async (imageBlob: Blob) => {
+    setImageToEditBeforeUpload(null);
+
+    const isSingleImageModel = selectedModel?.name.toLowerCase() === 'kontext';
+    const oldImagesToDelete = (isSingleImageModel && uploadedImages.length > 0) ? [...uploadedImages] : [];
+
+    setIsLoading(true);
+    setError(null);
+    setLoadingMessage('Uploading image...');
+
+    try {
+        const extension = imageBlob.type.split('/')[1] || 'png';
+        const file = new File([imageBlob], `source-${Date.now()}.${extension}`, { type: imageBlob.type });
+
+        const newUploadedImage = await uploadImageWithVerification(file);
+
+        if (isSingleImageModel) {
+            setUploadedImages([newUploadedImage]);
+        } else {
+            setUploadedImages(prev => [...prev, newUploadedImage]);
+        }
+        
+        for (const oldImage of oldImagesToDelete) {
+          if (oldImage.deleteUrl) {
+            deleteImage(oldImage).catch(err => {
+              console.warn('Failed to delete old source image after adding new one:', err);
+            });
+          }
+        }
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
+        setError(`Failed to save and upload image: ${errorMessage}`);
+    } finally {
+        setIsLoading(false);
+        setLoadingMessage('');
+    }
+  };
+
+  const handleEditorSave = async (imageBlob: Blob) => {
     if (!editingImage) return;
 
     const originalIndex = editingImage.index;
@@ -547,11 +590,10 @@ const App: React.FC = () => {
     setLoadingMessage('Uploading edited image...');
 
     try {
-        const res = await fetch(imageDataUrl);
-        const blob = await res.blob();
-        const file = new File([blob], `edited-${Date.now()}.png`, { type: 'image/png' });
+        const extension = imageBlob.type.split('/')[1] || 'png';
+        const file = new File([imageBlob], `edited-${Date.now()}.${extension}`, { type: imageBlob.type });
 
-        const newUploadedImage = await uploadImage(file);
+        const newUploadedImage = await uploadImageWithVerification(file);
 
         setUploadedImages(prev => {
             const updated = [...prev];
@@ -560,7 +602,7 @@ const App: React.FC = () => {
         });
 
         // Delete the old image in the background, don't wait for it
-        if (oldImageToDelete.deleteUrl) {
+        if (oldImageToDelete?.deleteUrl) {
             deleteImage(oldImageToDelete).catch(err => {
                 console.warn('Failed to delete old source image after edit, continuing anyway:', err);
             });
@@ -597,6 +639,9 @@ const App: React.FC = () => {
       setLightboxIndex(lightboxIndex - 1);
     }
   };
+
+  const isEditingNew = !!imageToEditBeforeUpload;
+  const editorImageUrl = imageToEditBeforeUpload || editingImage?.url;
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col">
@@ -648,6 +693,7 @@ const App: React.FC = () => {
             onCheckAndSaveApiKey={handleCheckAndSaveApiKey}
             uploadedImages={uploadedImages}
             setUploadedImages={setUploadedImages}
+            onAddNewImage={handleAddNewImage}
             onEditImage={handleEditImage}
             showHighQuality={showHighQuality}
             isHighQuality={isHighQuality}
@@ -690,12 +736,15 @@ const App: React.FC = () => {
           hasPrev={lightboxIndex > 0}
         />
       )}
-      {editingImage && (
+      {editorImageUrl && (
         <ImageEditorModal
-          isOpen={!!editingImage}
-          onClose={() => setEditingImage(null)}
-          imageUrl={editingImage.url}
-          onSave={handleEditorSave}
+          isOpen={true}
+          onClose={() => {
+            setImageToEditBeforeUpload(null);
+            setEditingImage(null);
+          }}
+          imageUrl={editorImageUrl}
+          onSave={isEditingNew ? handleSaveAndUpload : handleEditorSave}
         />
       )}
     </div>

@@ -92,3 +92,76 @@ export const deleteImage = async (image: UploadedImage): Promise<void> => {
         throw error;
     }
 };
+
+const verifyImageLoad = (url: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timeout = 15000; // 15 seconds
+
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        
+        const timer = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                img.src = ''; // Stop loading
+                reject(new Error(`Image verification timed out after ${timeout / 1000}s for URL: ${url}.`));
+            }
+        }, timeout);
+
+        img.onload = () => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve();
+            }
+        };
+        img.onerror = () => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                reject(new Error(`Image failed to load from URL: ${url}.`));
+            }
+        };
+        img.src = url;
+    });
+};
+
+/**
+ * Uploads a file to ImgBB and verifies the returned URL is accessible.
+ * Retries on failure.
+ * @param file The image file to upload.
+ * @param maxRetries The maximum number of times to try uploading.
+ * @returns A promise that resolves to an UploadedImage object with URL and delete URL.
+ */
+export const uploadImageWithVerification = async (file: File, maxRetries = 2): Promise<UploadedImage> => {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        let uploadedImage: UploadedImage | null = null;
+        try {
+            // Step 1: Upload the image
+            uploadedImage = await uploadImage(file);
+
+            // Step 2: Verify the image can be loaded
+            await verifyImageLoad(uploadedImage.url);
+
+            // If verification succeeds, return the result
+            return uploadedImage;
+
+        } catch (error) {
+            console.warn(`Attempt ${attempt}/${maxRetries} to upload and verify image failed.`, error);
+            lastError = error instanceof Error ? error : new Error(String(error));
+
+            // Step 3: If upload succeeded but verification failed, delete the broken image before retrying
+            if (uploadedImage?.deleteUrl) {
+                console.log('Verification failed, attempting to delete unusable image from ImgBB...');
+                // Don't await, and don't let this block the retry.
+                deleteImage(uploadedImage).catch(deleteError => {
+                    console.error('Failed to delete unsuccessful upload from ImgBB.', deleteError);
+                });
+            }
+        }
+    }
+    // If all retries fail, throw the last error
+    throw new Error(`Failed to upload and verify image after ${maxRetries} attempts. Last error: ${lastError?.message}`);
+};
