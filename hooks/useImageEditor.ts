@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import type { Tool, Layer, CanvasSize, InteractionState, TextPromptState } from '../types';
+import type { Tool, Layer, CanvasSize, InteractionState, TextPromptState, InteractionType } from '../types';
 
 interface useImageEditorProps {
     imageUrl: string;
@@ -7,13 +7,87 @@ interface useImageEditorProps {
     onSave: (imageBlob: Blob) => void;
 }
 
+const getOpaqueBounds = (canvas: HTMLCanvasElement): { x: number; y: number; width: number; height: number } | null => {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+
+    const { width, height } = canvas;
+    if (width === 0 || height === 0) return null;
+    
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    let minX = width, minY = height, maxX = -1, maxY = -1;
+
+    // Top scan
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            if (data[(y * width + x) * 4 + 3] > 0) {
+                minY = y;
+                y = height; // break outer loop
+                break;
+            }
+        }
+    }
+
+    // If no pixels found, minY will still be height
+    if (minY === height) {
+        return null;
+    }
+
+    // Bottom scan
+    for (let y = height - 1; y >= 0; y--) {
+        for (let x = 0; x < width; x++) {
+            if (data[(y * width + x) * 4 + 3] > 0) {
+                maxY = y;
+                y = -1; // break outer loop
+                break;
+            }
+        }
+    }
+
+    // Left scan
+    for (let x = 0; x < width; x++) {
+        for (let y = 0; y < height; y++) {
+            if (data[(y * width + x) * 4 + 3] > 0) {
+                minX = x;
+                x = width; // break outer loop
+                break;
+            }
+        }
+    }
+
+    // Right scan
+    for (let x = width - 1; x >= 0; x--) {
+        for (let y = 0; y < height; y++) {
+            if (data[(y * width + x) * 4 + 3] > 0) {
+                maxX = x;
+                x = -1; // break outer loop
+                break;
+            }
+        }
+    }
+    
+    if (maxX < minX || maxY < minY) {
+        return null;
+    }
+
+    return {
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+    };
+};
+
+
 export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProps) => {
     // Refs
     const mainCanvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const isInitialLoad = useRef(true);
-    // This ref is to allow high-frequency move handlers to access latest layer data without causing re-renders
     const layersRef = useRef<Layer[]>([]);
+    const lastDrawPosRef = useRef({ x: 0, y: 0 });
 
     // State
     const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
@@ -22,6 +96,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     const [tool, _setTool] = useState<Tool>('brush');
     const [color, setColor] = useState('#EF4444');
     const [brushSize, setBrushSize] = useState(20);
+    const [eraserSize, setEraserSize] = useState(20);
+    const [rectangleStrokeSize, setRectangleStrokeSize] = useState(1);
     const [isRectFilled, setIsRectFilled] = useState(false);
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -33,6 +109,9 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     const [autoSelectLayer, setAutoSelectLayer] = useState(false);
     const [textPrompt, setTextPrompt] = useState<TextPromptState>({ visible: false, value: '', x: 0, y: 0 });
     const [textSize, setTextSize] = useState(48);
+    const [isResizeModalOpen, setIsResizeModalOpen] = useState(false);
+    const [resizeDimensions, setResizeDimensions] = useState({ width: 0, height: 0 });
+    const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(true);
 
     const setLayers = (newLayers: React.SetStateAction<Layer[]>) => {
         const result = typeof newLayers === 'function' ? newLayers(layersRef.current) : newLayers;
@@ -41,13 +120,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     };
     
     const setTool = (newTool: Tool) => {
-        if (newTool === 'rectangle' && tool !== 'rectangle') {
-            setBrushSize(1);
-        }
         _setTool(newTool);
     };
-
-    // --- Core Drawing & State Management ---
 
     const drawCompositeCanvas = useCallback(() => {
         const canvas = mainCanvasRef.current;
@@ -71,9 +145,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
 
         for (const layer of layersRef.current) {
             if (layer.visible) {
-                const w = layer.canvas.width * layer.scale;
-                const h = layer.canvas.height * layer.scale;
-                ctx.drawImage(layer.canvas, layer.x, layer.y, w, h);
+                ctx.drawImage(layer.canvas, layer.x, layer.y, layer.width, layer.height);
             }
         }
     }, []);
@@ -83,7 +155,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         const stateData = {
             canvasSize,
             layers: layersRef.current.map(l => ({
-                id: l.id, name: l.name, x: l.x, y: l.y, scale: l.scale, visible: l.visible,
+                id: l.id, name: l.name, x: l.x, y: l.y, width: l.width, height: l.height, visible: l.visible,
                 imageData: l.canvas.toDataURL(),
             }))
         };
@@ -92,7 +164,6 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         setHistory(prevHistory => {
             const currentHistory = prevHistory.slice(0, historyIndex + 1);
             
-            // Prevent saving identical subsequent states
             if (currentHistory.length > 0 && currentHistory[currentHistory.length - 1] === newStateString) {
                 return prevHistory;
             }
@@ -120,7 +191,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
                     canvas.getContext('2d')?.drawImage(img, 0, 0);
                     resolve({
                         id: savedLayer.id, name: savedLayer.name, canvas,
-                        visible: savedLayer.visible, x: savedLayer.x, y: savedLayer.y, scale: savedLayer.scale
+                        visible: savedLayer.visible, x: savedLayer.x, y: savedLayer.y, 
+                        width: savedLayer.width, height: savedLayer.height
                     });
                 };
                 img.src = savedLayer.imageData;
@@ -142,23 +214,22 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     const handleUndo = () => historyIndex > 0 && restoreState(historyIndex - 1);
     const handleRedo = () => historyIndex < history.length - 1 && restoreState(historyIndex + 1);
 
-    // --- Interaction Logic ---
     const drawOnLayer = useCallback((layer: Layer, from: {x: number, y: number}, to: {x: number, y: number}, currentTool: Tool, drawColor: string, size: number, isSinglePoint = false) => {
         const ctx = layer.canvas.getContext('2d')!;
         ctx.save();
         ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
-        ctx.lineWidth = size;
+        ctx.lineWidth = size * (layer.canvas.width / layer.width); // Scale brush size
         ctx.strokeStyle = drawColor;
         ctx.fillStyle = drawColor;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         
-        const localFrom = { x: (from.x - layer.x) / layer.scale, y: (from.y - layer.y) / layer.scale };
-        const localTo = { x: (to.x - layer.x) / layer.scale, y: (to.y - layer.y) / layer.scale };
+        const localFrom = { x: (from.x - layer.x) * (layer.canvas.width / layer.width), y: (from.y - layer.y) * (layer.canvas.height / layer.height) };
+        const localTo = { x: (to.x - layer.x) * (layer.canvas.width / layer.width), y: (to.y - layer.y) * (layer.canvas.height / layer.height) };
 
         if (isSinglePoint) {
             ctx.beginPath();
-            ctx.arc(localTo.x, localTo.y, size / 2, 0, Math.PI * 2);
+            ctx.arc(localTo.x, localTo.y, ctx.lineWidth / 2, 0, Math.PI * 2);
             ctx.fill();
         } else {
             ctx.beginPath();
@@ -182,24 +253,44 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         return { x: canvasX, y: canvasY };
     }, [zoom, viewOffset]);
     
+    const handleDeleteLayer = useCallback((layerIdToDelete?: number) => {
+        const idToDelete = layerIdToDelete ?? selectedLayerId;
+        if (idToDelete) {
+            saveState();
+            setLayers(l => {
+                const currentLayers = layersRef.current; // Use the most up-to-date list for finding index
+                const filtered = l.filter(layer => layer.id !== idToDelete);
+                if (filtered.length > 0) {
+                    if (selectedLayerId === idToDelete) {
+                        const currentIndex = currentLayers.findIndex(layer => layer.id === idToDelete);
+                        setSelectedLayerId(filtered[Math.max(0, currentIndex - 1)].id);
+                    }
+                } else {
+                    onClose();
+                }
+                return filtered;
+            });
+        }
+    }, [selectedLayerId, saveState, onClose]);
+
     const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
         if ('button' in e && e.button === 1) { // Middle mouse pan
             e.preventDefault();
-            setInteraction({ type: 'pan', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, original: { x: viewOffset.x, y: viewOffset.y } });
+            setInteraction({ type: 'pan', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, original: { x: viewOffset.x, y: viewOffset.y, width: 0, height: 0 } });
             return;
         }
         if ('touches' in e && e.touches.length === 2) { // Pinch zoom
             const t1 = e.touches[0]; const t2 = e.touches[1];
             const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
             const midPoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
-            setInteraction({ type: 'pinch', startX: midPoint.x, startY: midPoint.y, lastX: midPoint.x, lastY: midPoint.y, original: {x: viewOffset.x, y: viewOffset.y}, initialPinch: { dist, zoom } });
+            setInteraction({ type: 'pinch', startX: midPoint.x, startY: midPoint.y, lastX: midPoint.x, lastY: midPoint.y, original: {x: viewOffset.x, y: viewOffset.y, width: 0, height: 0}, initialPinch: { dist, zoom } });
             return;
         }
         if (textPrompt.visible) return;
         if (isSpacePressed) {
             const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
             const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-            setInteraction({ type: 'pan', startX: clientX, startY: clientY, lastX: clientX, lastY: clientY, original: { x: viewOffset.x, y: viewOffset.y } });
+            setInteraction({ type: 'pan', startX: clientX, startY: clientY, lastX: clientX, lastY: clientY, original: { x: viewOffset.x, y: viewOffset.y, width: 0, height: 0 } });
             return;
         }
         const pos = getPointerPosition(e);
@@ -211,51 +302,58 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         if (tool === 'brush' || tool === 'eraser' || tool === 'rectangle') {
             if (!selectedLayer || !selectedLayer.visible) return;
             
-            const snapshotCanvas = document.createElement('canvas');
-            snapshotCanvas.width = selectedLayer.canvas.width;
-            snapshotCanvas.height = selectedLayer.canvas.height;
-            snapshotCanvas.getContext('2d')!.drawImage(selectedLayer.canvas, 0, 0);
+             const currentSize = tool === 'brush' ? brushSize : tool === 'eraser' ? eraserSize : rectangleStrokeSize;
+             const halfBrush = tool === 'rectangle' ? (isRectFilled ? 0 : currentSize / 2) : currentSize / 2;
+             const strokeBounds = {
+                minX: pos.x - halfBrush,
+                minY: pos.y - halfBrush,
+                maxX: pos.x + halfBrush,
+                maxY: pos.y + halfBrush,
+            };
 
             if (tool === 'brush' || tool === 'eraser') {
-                drawOnLayer(selectedLayer, pos, pos, tool, color, brushSize, true);
-                setInteraction({ type: 'draw', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, scale: selectedLayer.scale }, snapshotCanvas, strokePoints: [pos] });
+                drawOnLayer(selectedLayer, pos, pos, tool, color, currentSize, true);
+                drawCompositeCanvas();
+                lastDrawPosRef.current = pos;
+                setInteraction({ type: 'draw', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, strokeBounds });
             } else { // rectangle
                 const snapshot = selectedLayer.canvas.getContext('2d')!.getImageData(0, 0, selectedLayer.canvas.width, selectedLayer.canvas.height);
-                setInteraction({ type: 'draw-rect', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, scale: selectedLayer.scale }, snapshot, snapshotCanvas });
+                setInteraction({ type: 'draw-rect', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, snapshot, strokeBounds });
             }
         } else if (tool === 'move') {
             let targetLayer: Layer | null = null;
             if (autoSelectLayer) {
                 for (let i = layersRef.current.length - 1; i >= 0; i--) { 
                     const l = layersRef.current[i];
-                    if (l.visible && pos.x >= l.x && pos.x <= l.x + l.canvas.width*l.scale && pos.y >= l.y && pos.y <= l.y + l.canvas.height*l.scale) {
+                    if (l.visible && pos.x >= l.x && pos.x <= l.x + l.width && pos.y >= l.y && pos.y <= l.y + l.height) {
                         targetLayer = l;
                         break;
                     }
                 }
-            } else if (selectedLayer && selectedLayer.visible && pos.x >= selectedLayer.x && pos.x <= selectedLayer.x + selectedLayer.canvas.width*selectedLayer.scale && pos.y >= selectedLayer.y && pos.y <= selectedLayer.y + selectedLayer.canvas.height*selectedLayer.scale) {
+            } else if (selectedLayer && selectedLayer.visible && pos.x >= selectedLayer.x && pos.x <= selectedLayer.x + selectedLayer.width && pos.y >= selectedLayer.y && pos.y <= selectedLayer.y + selectedLayer.height) {
                 targetLayer = selectedLayer;
             }
 
             if (targetLayer) {
                 if (autoSelectLayer && selectedLayerId !== targetLayer.id) setSelectedLayerId(targetLayer.id);
-                setInteraction({ type: 'move', layerId: targetLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: targetLayer.x, y: targetLayer.y } });
+                setInteraction({ type: 'move', layerId: targetLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: targetLayer.x, y: targetLayer.y, width: targetLayer.width, height: targetLayer.height } });
             }
         }
-    }, [isSpacePressed, textPrompt.visible, tool, selectedLayerId, autoSelectLayer, getPointerPosition, viewOffset, zoom, drawOnLayer, color, brushSize, isRectFilled]);
+    }, [isSpacePressed, textPrompt.visible, tool, selectedLayerId, autoSelectLayer, getPointerPosition, viewOffset, zoom, drawOnLayer, color, brushSize, eraserSize, rectangleStrokeSize, isRectFilled, drawCompositeCanvas]);
 
-    const handleScaleInteractionStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const handleTransformInteractionStart = useCallback((e: React.MouseEvent | React.TouchEvent, type: InteractionType) => {
         const selectedLayer = layersRef.current.find(l => l.id === selectedLayerId);
         if (!selectedLayer) return;
         e.stopPropagation();
+        e.preventDefault();
         const pos = getPointerPosition(e);
-        setInteraction({ type: 'scale-br', layerId: selectedLayerId, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.canvas.width * selectedLayer.scale, height: selectedLayer.canvas.height * selectedLayer.scale, scale: selectedLayer.scale } });
+        setInteraction({ type, layerId: selectedLayerId, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height } });
     }, [selectedLayerId, getPointerPosition]);
 
     const handleCropInteractionStart = useCallback((e: React.MouseEvent | React.TouchEvent, type: any) => {
         e.preventDefault(); e.stopPropagation();
         const pos = getPointerPosition(e);
-        setInteraction({ type, startX: pos.x, startY: pos.y, lastX:pos.x, lastY:pos.y, original: { ...cropBox } });
+        setInteraction({ type, startX: pos.x, startY: pos.y, lastX:pos.x, lastY:pos.y, original: { ...cropBox, x: cropBox.x, y: cropBox.y } });
     }, [cropBox, getPointerPosition]);
     
     const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -271,11 +369,25 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             setViewOffset({ x: pointer.x - worldPos.x * newZoom, y: pointer.y - worldPos.y * newZoom });
             setZoom(newZoom);
         } else if (e.shiftKey) {
-            setBrushSize(s => Math.max(1, Math.min(200, s + (e.deltaY < 0 ? 1 : -1))));
+            const increment = e.deltaY < 0 ? 1 : -1;
+            switch (tool) {
+                case 'brush':
+                    setBrushSize(s => Math.max(1, Math.min(200, s + increment)));
+                    break;
+                case 'eraser':
+                    setEraserSize(s => Math.max(1, Math.min(200, s + increment)));
+                    break;
+                case 'rectangle':
+                    setRectangleStrokeSize(s => Math.max(1, Math.min(200, s + increment)));
+                    break;
+                case 'text':
+                    setTextSize(s => Math.max(8, Math.min(200, s + increment)));
+                    break;
+            }
         } else {
              setViewOffset(v => ({...v, x: v.x - e.deltaX, y: v.y - e.deltaY}));
         }
-    }, [zoom, viewOffset]);
+    }, [zoom, viewOffset, tool]);
 
     useEffect(() => {
         const handleGlobalMouseMove = (e: MouseEvent | TouchEvent) => {
@@ -307,58 +419,205 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             }
 
             const pos = getPointerPosition(e);
+            interaction.lastX = pos.x;
+            interaction.lastY = pos.y;
 
-            switch(interaction.type) {
-                case 'draw': {
-                    const layer = layersRef.current.find(l => l.id === interaction.layerId);
-                    if (!layer) return;
-
-                    drawOnLayer(layer, { x: interaction.lastX, y: interaction.lastY }, pos, tool, color, brushSize);
-                    
-                    drawCompositeCanvas();
-                    setInteraction(prev => {
-                        if (!prev || !prev.strokePoints) return null;
-                        return { ...prev, lastX: pos.x, lastY: pos.y, strokePoints: [...prev.strokePoints, pos] };
-                    });
-                    break;
+            if (interaction.type === 'draw' || interaction.type === 'draw-rect') {
+                const currentSize = tool === 'brush' ? brushSize : tool === 'eraser' ? eraserSize : rectangleStrokeSize;
+                
+                if (interaction.strokeBounds) {
+                    const halfBrush = tool === 'rectangle' ? (isRectFilled ? 0 : currentSize / 2) : currentSize / 2;
+                    interaction.strokeBounds.minX = Math.min(interaction.strokeBounds.minX, pos.x - halfBrush);
+                    interaction.strokeBounds.minY = Math.min(interaction.strokeBounds.minY, pos.y - halfBrush);
+                    interaction.strokeBounds.maxX = Math.max(interaction.strokeBounds.maxX, pos.x + halfBrush);
+                    interaction.strokeBounds.maxY = Math.max(interaction.strokeBounds.maxY, pos.y + halfBrush);
                 }
-                case 'draw-rect': {
-                    const layer = layersRef.current.find(l => l.id === interaction.layerId);
-                    if (!layer || !interaction.snapshot) break;
 
-                    const ctx = layer.canvas.getContext('2d')!;
-                    ctx.putImageData(interaction.snapshot, 0, 0);
+                let layer = layersRef.current.find(l => l.id === interaction.layerId);
+                if (!layer) return;
 
-                    const localStart = { x: (interaction.startX - layer.x) / layer.scale, y: (interaction.startY - layer.y) / layer.scale };
-                    const localCurrent = { x: (pos.x - layer.x) / layer.scale, y: (pos.y - layer.y) / layer.scale };
+                const halfBrush = tool === 'rectangle' ? (isRectFilled ? 0 : currentSize / 2) : currentSize / 2;
+                
+                const currentBounds = interaction.type === 'draw'
+                    ? { minX: Math.min(pos.x, lastDrawPosRef.current.x) - halfBrush, minY: Math.min(pos.y, lastDrawPosRef.current.y) - halfBrush, maxX: Math.max(pos.x, lastDrawPosRef.current.x) + halfBrush, maxY: Math.max(pos.y, lastDrawPosRef.current.y) + halfBrush }
+                    : { minX: Math.min(pos.x, interaction.startX) - halfBrush, minY: Math.min(pos.y, interaction.startY) - halfBrush, maxX: Math.max(pos.x, interaction.startX) + halfBrush, maxY: Math.max(pos.y, interaction.startY) + halfBrush };
+                
+                const expansion = {
+                    left: Math.max(0, Math.ceil(layer.x - currentBounds.minX)),
+                    top: Math.max(0, Math.ceil(layer.y - currentBounds.minY)),
+                    right: Math.max(0, Math.ceil(currentBounds.maxX - (layer.x + layer.width))),
+                    bottom: Math.max(0, Math.ceil(currentBounds.maxY - (layer.y + layer.height))),
+                };
 
+                let layerToDrawOn = layer;
+                if (tool !== 'eraser' && (expansion.left > 0 || expansion.top > 0 || expansion.right > 0 || expansion.bottom > 0)) {
+                    const scaleX = layer.canvas.width / layer.width;
+                    const scaleY = layer.canvas.height / layer.height;
+
+                    const newCanvas = document.createElement('canvas');
+                    const oldCanvas = layer.canvas;
+                    newCanvas.width = Math.round(oldCanvas.width + (expansion.left + expansion.right) * scaleX);
+                    newCanvas.height = Math.round(oldCanvas.height + (expansion.top + expansion.bottom) * scaleY);
+                    newCanvas.getContext('2d')!.drawImage(oldCanvas, Math.round(expansion.left * scaleX), Math.round(expansion.top * scaleY));
+
+                    const newWidth = layer.width + expansion.left + expansion.right;
+                    const newHeight = layer.height + expansion.top + expansion.bottom;
+                    const newX = layer.x - expansion.left;
+                    const newY = layer.y - expansion.top;
+
+                    const newLayerState = { ...layer, canvas: newCanvas, x: newX, y: newY, width: newWidth, height: newHeight };
+                    setLayers(ls => ls.map(l => l.id === layer.id ? newLayerState : l));
+                    layerToDrawOn = newLayerState;
+                    
+                    if (interaction.type === 'draw-rect' && interaction.snapshot) {
+                         const newSnapshotCanvas = document.createElement('canvas');
+                         newSnapshotCanvas.width = newCanvas.width;
+                         newSnapshotCanvas.height = newCanvas.height;
+                         const newSnapshotCtx = newSnapshotCanvas.getContext('2d')!;
+                         newSnapshotCtx.putImageData(interaction.snapshot, Math.round(expansion.left * scaleX), Math.round(expansion.top * scaleY));
+                         interaction.snapshot = newSnapshotCtx.getImageData(0, 0, newSnapshotCanvas.width, newSnapshotCanvas.height);
+                    }
+                }
+                
+                if (interaction.type === 'draw') {
+                    drawOnLayer(layerToDrawOn, lastDrawPosRef.current, pos, tool, color, currentSize);
+                    lastDrawPosRef.current = pos;
+                } else { // draw-rect
+                    const ctx = layerToDrawOn.canvas.getContext('2d')!;
+                    ctx.putImageData(interaction.snapshot!, 0, 0);
+                    const localStart = { x: (interaction.startX - layerToDrawOn.x) * (layerToDrawOn.canvas.width / layerToDrawOn.width), y: (interaction.startY - layerToDrawOn.y) * (layerToDrawOn.canvas.height / layerToDrawOn.height) };
+                    const localCurrent = { x: (pos.x - layerToDrawOn.x) * (layerToDrawOn.canvas.width / layerToDrawOn.width), y: (pos.y - layerToDrawOn.y) * (layerToDrawOn.canvas.height / layerToDrawOn.height) };
                     const rectToDraw = { x: Math.min(localStart.x, localCurrent.x), y: Math.min(localStart.y, localCurrent.y), w: Math.abs(localStart.x - localCurrent.x), h: Math.abs(localStart.y - localCurrent.y) };
 
                     if (isRectFilled) {
                         ctx.fillStyle = color;
                         ctx.fillRect(rectToDraw.x, rectToDraw.y, rectToDraw.w, rectToDraw.h);
                     } else {
-                        ctx.strokeStyle = color; ctx.lineWidth = brushSize;
-                        ctx.strokeRect(rectToDraw.x + brushSize / 2, rectToDraw.y + brushSize / 2, rectToDraw.w - brushSize, rectToDraw.h - brushSize);
+                        const scaledBrushSize = currentSize * (layerToDrawOn.canvas.width / layerToDrawOn.width);
+                        ctx.strokeStyle = color; ctx.lineWidth = scaledBrushSize;
+                        ctx.strokeRect(rectToDraw.x + scaledBrushSize / 2, rectToDraw.y + scaledBrushSize / 2, rectToDraw.w - scaledBrushSize, rectToDraw.h - scaledBrushSize);
                     }
-                    
-                    drawCompositeCanvas();
-                    setInteraction(prev => prev ? { ...prev, lastX: pos.x, lastY: pos.y } : null);
-                    break;
                 }
+                drawCompositeCanvas();
+                return;
+            }
+
+            switch(interaction.type) {
                 case 'move':
                     setLayers(ls => ls.map(l => l.id === interaction.layerId ? { ...l, x: interaction.original.x + pos.x - interaction.startX, y: interaction.original.y + pos.y - interaction.startY } : l));
                     break;
-                case 'scale-br': {
-                    const layer = layersRef.current.find(l => l.id === interaction.layerId)!;
-                    const newScale = ((interaction.original.width! + pos.x - interaction.startX) / layer.canvas.width);
-                    setLayers(ls => ls.map(l => l.id === interaction.layerId ? { ...l, scale: Math.max(0.05, newScale) } : l));
-                    break;
-                }
                 default:
-                    if (interaction.type.startsWith('crop-')) {
+                    if (interaction.type.startsWith('transform-')) {
+                        const { x, y, width, height } = interaction.original;
+                        const type = interaction.type;
+
+                        let newX = x, newY = y, newWidth = width, newHeight = height;
+
+                        if (isAspectRatioLocked) {
+                            const aspect = width / height;
+                            const center = { x: x + width / 2, y: y + height / 2 };
+                            let anchor = { x: 0, y: 0 };
+
+                            switch (type) {
+                                case 'transform-tl': anchor = { x: x + width, y: y + height }; break;
+                                case 'transform-tr': anchor = { x: x, y: y + height }; break;
+                                case 'transform-bl': anchor = { x: x + width, y: y }; break;
+                                case 'transform-br': anchor = { x: x, y: y }; break;
+                                case 'transform-t':  anchor = { x: center.x, y: y + height }; break;
+                                case 'transform-b':  anchor = { x: center.x, y: y }; break;
+                                case 'transform-l':  anchor = { x: x + width, y: center.y }; break;
+                                case 'transform-r':  anchor = { x: x, y: center.y }; break;
+                            }
+
+                            const dx = pos.x - anchor.x;
+                            const dy = pos.y - anchor.y;
+
+                            if (type === 'transform-t' || type === 'transform-b') {
+                                newHeight = Math.abs(dy);
+                                newWidth = newHeight * aspect;
+                            } else if (type === 'transform-l' || type === 'transform-r') {
+                                newWidth = Math.abs(dx);
+                                newHeight = newWidth / aspect;
+                            } else { // Corner handles
+                                if (Math.abs(dx / aspect) > Math.abs(dy)) {
+                                    newWidth = Math.abs(dx);
+                                    newHeight = newWidth / aspect;
+                                } else {
+                                    newHeight = Math.abs(dy);
+                                    newWidth = newHeight * aspect;
+                                }
+                            }
+
+                            switch (type) {
+                                case 'transform-tl': newX = anchor.x - newWidth; newY = anchor.y - newHeight; break;
+                                case 'transform-tr': newX = anchor.x; newY = anchor.y - newHeight; break;
+                                case 'transform-bl': newX = anchor.x - newWidth; newY = anchor.y; break;
+                                case 'transform-br': newX = anchor.x; newY = anchor.y; break;
+                                case 'transform-t':  newX = anchor.x - newWidth / 2; newY = anchor.y - newHeight; break;
+                                case 'transform-b':  newX = anchor.x - newWidth / 2; newY = anchor.y; break;
+                                case 'transform-l':  newX = anchor.x - newWidth; newY = anchor.y - newHeight / 2; break;
+                                case 'transform-r':  newX = anchor.x; newY = anchor.y - newHeight / 2; break;
+                            }
+                        } else { // Unlocked aspect ratio
+                            const right = x + width;
+                            const bottom = y + height;
+                            
+                            newX = x;
+                            newY = y;
+                            newWidth = width;
+                            newHeight = height;
+
+                            switch (type) {
+                                case 'transform-br':
+                                    newWidth = pos.x - x;
+                                    newHeight = pos.y - y;
+                                    break;
+                                case 'transform-bl':
+                                    newX = pos.x;
+                                    newWidth = right - pos.x;
+                                    newHeight = pos.y - y;
+                                    break;
+                                case 'transform-tr':
+                                    newY = pos.y;
+                                    newWidth = pos.x - x;
+                                    newHeight = bottom - pos.y;
+                                    break;
+                                case 'transform-tl':
+                                    newX = pos.x;
+                                    newY = pos.y;
+                                    newWidth = right - pos.x;
+                                    newHeight = bottom - pos.y;
+                                    break;
+                                case 'transform-r':
+                                    newWidth = pos.x - x;
+                                    break;
+                                case 'transform-l':
+                                    newX = pos.x;
+                                    newWidth = right - pos.x;
+                                    break;
+                                case 'transform-b':
+                                    newHeight = pos.y - y;
+                                    break;
+                                case 'transform-t':
+                                    newY = pos.y;
+                                    newHeight = bottom - pos.y;
+                                    break;
+                            }
+
+                            if (newWidth < 0) {
+                                newX = newX + newWidth;
+                                newWidth = -newWidth;
+                            }
+                            if (newHeight < 0) {
+                                newY = newY + newHeight;
+                                newHeight = -newHeight;
+                            }
+                        }
+                        
+                        setLayers(ls => ls.map(l => l.id === interaction.layerId ? { ...l, x: newX, y: newY, width: Math.max(10, newWidth), height: Math.max(10, newHeight) } : l));
+                    
+                    } else if (interaction.type.startsWith('crop-')) {
                         let { x, y, width, height } = interaction.original;
-                        width = width!; height = height!;
                         const dx = pos.x - interaction.startX, dy = pos.y - interaction.startY;
                         switch(interaction.type) {
                             case 'crop-move': x += dx; y += dy; break;
@@ -379,71 +638,124 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         const handleGlobalPointerUp = (e: MouseEvent | TouchEvent) => {
             if ('touches' in e && e.touches.length > 0) return;
 
-            if (interaction) {
-                const interactionType = interaction.type;
-                if (interactionType === 'draw' || interactionType === 'draw-rect') {
-                    const { snapshotCanvas, strokePoints, layerId, original } = interaction;
-                    const finalLayer = layersRef.current.find(l => l.id === layerId)!;
-                    const halfBrush = brushSize / 2;
-                    
-                    const points = interactionType === 'draw' ? strokePoints! : [ {x: interaction.startX, y: interaction.startY}, {x: interaction.lastX, y: interaction.lastY} ];
-                    
-                    const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-                    points.forEach(p => {
-                        const localX = (p.x - original.x) / original.scale!;
-                        const localY = (p.y - original.y) / original.scale!;
-                        bounds.minX = Math.min(bounds.minX, localX - halfBrush);
-                        bounds.minY = Math.min(bounds.minY, localY - halfBrush);
-                        bounds.maxX = Math.max(bounds.maxX, localX + halfBrush);
-                        bounds.maxY = Math.max(bounds.maxY, localY + halfBrush);
-                    });
-
-                    const expansion = {
-                        left: Math.max(0, Math.ceil(-bounds.minX)),
-                        top: Math.max(0, Math.ceil(-bounds.minY)),
-                        right: Math.max(0, Math.ceil(bounds.maxX - snapshotCanvas!.width)),
-                        bottom: Math.max(0, Math.ceil(bounds.maxY - snapshotCanvas!.height)),
+            if (interaction && (interaction.type === 'draw' || interaction.type === 'draw-rect')) {
+                const { layerId, original: originalLayerState, strokeBounds } = interaction;
+                const currentSize = tool === 'rectangle' ? rectangleStrokeSize : tool === 'eraser' ? eraserSize : brushSize;
+                
+                let finalShapeBounds = strokeBounds;
+                if (interaction.type === 'draw-rect' && strokeBounds) {
+                    const halfBrush = isRectFilled ? 0 : currentSize / 2;
+                    finalShapeBounds = {
+                        minX: Math.min(interaction.startX, interaction.lastX) - halfBrush,
+                        minY: Math.min(interaction.startY, interaction.lastY) - halfBrush,
+                        maxX: Math.max(interaction.startX, interaction.lastX) + halfBrush,
+                        maxY: Math.max(interaction.startY, interaction.lastY) + halfBrush,
                     };
-                    if (Object.values(expansion).some(v => v > 0)) {
-                        const newCanvas = document.createElement('canvas');
-                        newCanvas.width = snapshotCanvas!.width + expansion.left + expansion.right;
-                        newCanvas.height = snapshotCanvas!.height + expansion.top + expansion.bottom;
-                        const newCtx = newCanvas.getContext('2d')!;
-                        newCtx.drawImage(snapshotCanvas!, expansion.left, expansion.top);
-                        const newLayerX = original.x - (expansion.left * original.scale!);
-                        const newLayerY = original.y - (expansion.top * original.scale!);
+                }
+
+                if (layerId && originalLayerState && finalShapeBounds) {
+                    const layerAfterMouseMove = layersRef.current.find(l => l.id === layerId);
+                    if (layerAfterMouseMove) {
+                        const unionBounds = {
+                            minX: Math.floor(Math.min(originalLayerState.x, finalShapeBounds.minX)),
+                            minY: Math.floor(Math.min(originalLayerState.y, finalShapeBounds.minY)),
+                            maxX: Math.ceil(Math.max(originalLayerState.x + originalLayerState.width, finalShapeBounds.maxX)),
+                            maxY: Math.ceil(Math.max(originalLayerState.y + originalLayerState.height, finalShapeBounds.maxY)),
+                        };
+
+                        const finalWidth = unionBounds.maxX - unionBounds.minX;
+                        const finalHeight = unionBounds.maxY - unionBounds.minY;
+                        const finalX = unionBounds.minX;
+                        const finalY = unionBounds.minY;
                         
-                        // Redraw full stroke/rect
-                        if(interactionType === 'draw') {
-                            newCtx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
-                            newCtx.lineWidth = brushSize; newCtx.strokeStyle = color; newCtx.fillStyle = color;
-                            newCtx.lineCap = 'round'; newCtx.lineJoin = 'round';
-                            if (points.length === 1) {
-                                const p = points[0]; const localX = (p.x - newLayerX) / original.scale!; const localY = (p.y - newLayerY) / original.scale!;
-                                newCtx.beginPath(); newCtx.arc(localX, localY, brushSize / 2, 0, Math.PI * 2); newCtx.fill();
-                            } else {
-                                newCtx.beginPath();
-                                for (let i = 0; i < points.length; i++) {
-                                    const p = points[i]; const localX = (p.x - newLayerX) / original.scale!; const localY = (p.y - newLayerY) / original.scale!;
-                                    if (i === 0) newCtx.moveTo(localX, localY); else newCtx.lineTo(localX, localY);
-                                }
-                                newCtx.stroke();
-                            }
-                        } else { // rect
-                            const localStart = { x: (interaction.startX - newLayerX) / original.scale!, y: (interaction.startY - newLayerY) / original.scale! };
-                            const localEnd = { x: (interaction.lastX - newLayerX) / original.scale!, y: (interaction.lastY - newLayerY) / original.scale! };
-                            const rect = { x: Math.min(localStart.x, localEnd.x), y: Math.min(localStart.y, localEnd.y), w: Math.abs(localStart.x - localEnd.x), h: Math.abs(localStart.y - localEnd.y) };
-                            if (isRectFilled) {
-                                newCtx.fillStyle = color; newCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
-                            } else {
-                                newCtx.strokeStyle = color; newCtx.lineWidth = brushSize; newCtx.strokeRect(rect.x + halfBrush, rect.y + halfBrush, rect.w - brushSize, rect.h - brushSize);
-                            }
+                        const needsResize = Math.round(layerAfterMouseMove.width) !== finalWidth ||
+                                            Math.round(layerAfterMouseMove.height) !== finalHeight ||
+                                            Math.round(layerAfterMouseMove.x) !== finalX ||
+                                            Math.round(layerAfterMouseMove.y) !== finalY;
+
+                        if (needsResize) {
+                            const scaleX = layerAfterMouseMove.canvas.width / layerAfterMouseMove.width;
+                            const scaleY = layerAfterMouseMove.canvas.height / layerAfterMouseMove.height;
+
+                            const newCanvas = document.createElement('canvas');
+                            newCanvas.width = Math.max(1, Math.round(finalWidth * scaleX));
+                            newCanvas.height = Math.max(1, Math.round(finalHeight * scaleY));
+                            const ctx = newCanvas.getContext('2d')!;
+                            
+                            const sx_logical = finalX - layerAfterMouseMove.x;
+                            const sy_logical = finalY - layerAfterMouseMove.y;
+                            
+                            const sx_pixels = sx_logical * scaleX;
+                            const sy_pixels = sy_logical * scaleY;
+                            const sWidth_pixels = finalWidth * scaleX;
+                            const sHeight_pixels = finalHeight * scaleY;
+
+                            ctx.drawImage(
+                                layerAfterMouseMove.canvas,
+                                sx_pixels, sy_pixels, sWidth_pixels, sHeight_pixels,
+                                0, 0, newCanvas.width, newCanvas.height
+                            );
+
+                            const finalLayer = {
+                                ...layerAfterMouseMove,
+                                canvas: newCanvas,
+                                x: finalX,
+                                y: finalY,
+                                width: finalWidth,
+                                height: finalHeight,
+                            };
+                            
+                            const newLayers = layersRef.current.map(l => l.id === layerId ? finalLayer : l);
+                            layersRef.current = newLayers;
+                            _setLayers(newLayers);
                         }
-                        setLayers(layersRef.current.map(l => l.id === layerId ? { ...finalLayer, canvas: newCanvas, x: newLayerX, y: newLayerY } : l));
                     }
                 }
-                
-                if (interactionType !== 'pan' && interactionType !== 'pinch') {
+            }
+
+            if (interaction && interaction.type === 'draw' && tool === 'eraser') {
+                const layer = layersRef.current.find(l => l.id === interaction.layerId);
+                if (layer) {
+                    const bounds = getOpaqueBounds(layer.canvas);
+                    
+                    if (!bounds) {
+                        handleDeleteLayer(layer.id);
+                    } else {
+                        const { x: boundX, y: boundY, width: boundWidth, height: boundHeight } = bounds;
+                        
+                        if (boundWidth < layer.canvas.width || boundHeight < layer.canvas.height) {
+                            const newCanvas = document.createElement('canvas');
+                            newCanvas.width = boundWidth;
+                            newCanvas.height = boundHeight;
+                            newCanvas.getContext('2d')!.drawImage(
+                                layer.canvas,
+                                boundX, boundY, boundWidth, boundHeight,
+                                0, 0, boundWidth, boundHeight
+                            );
+        
+                            const scaleX = layer.width / layer.canvas.width;
+                            const scaleY = layer.height / layer.canvas.height;
+                            
+                            const finalLayer = {
+                                ...layer,
+                                canvas: newCanvas,
+                                x: layer.x + boundX * scaleX,
+                                y: layer.y + boundY * scaleY,
+                                width: boundWidth * scaleX,
+                                height: boundHeight * scaleY,
+                            };
+                            
+                            const newLayers = layersRef.current.map(l => l.id === layer.id ? finalLayer : l);
+                            layersRef.current = newLayers;
+                            _setLayers(newLayers);
+                        }
+                    }
+                }
+            }
+            
+            if (interaction) {
+                const interactionType = interaction.type;
+                if (!interactionType.startsWith('pan') && !interactionType.startsWith('pinch')) {
                     saveState();
                 }
             }
@@ -462,9 +774,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             window.removeEventListener('mouseup', handleGlobalPointerUp);
             window.removeEventListener('touchend', handleGlobalPointerUp);
         };
-    }, [interaction, getPointerPosition, drawCompositeCanvas, saveState, drawOnLayer, tool, color, brushSize, isRectFilled]);
-
-    // --- Actions ---
+    }, [interaction, getPointerPosition, drawCompositeCanvas, saveState, drawOnLayer, tool, color, brushSize, eraserSize, rectangleStrokeSize, isRectFilled, isAspectRatioLocked, handleDeleteLayer]);
 
     const addTextLayer = useCallback((text: string, x: number, y: number) => {
         if (!text.trim()) return;
@@ -485,26 +795,12 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         ctx.textBaseline = 'top';
         lines.forEach((line, i) => ctx.fillText(line, 0, i * fontHeight));
         
-        const newLayer: Layer = { id: Date.now(), name: `Text: ${text.substring(0, 10)}...`, canvas, visible: true, x, y, scale: 1 };
+        const newLayer: Layer = { id: Date.now(), name: `Text: ${text.substring(0, 10)}...`, canvas, visible: true, x, y, width: canvas.width, height: canvas.height };
         saveState();
         setLayers(prev => [...prev, newLayer]);
         setSelectedLayerId(newLayer.id);
         setTool('move');
     }, [textSize, color, saveState]);
-
-    const handleDeleteLayer = useCallback(() => {
-        if (selectedLayerId) {
-            saveState();
-            setLayers(l => {
-                const filtered = l.filter(layer => layer.id !== selectedLayerId);
-                if (filtered.length > 0) {
-                    const currentIndex = l.findIndex(layer => layer.id === selectedLayerId);
-                    setSelectedLayerId(filtered[Math.max(0, currentIndex - 1)].id);
-                } else onClose();
-                return filtered;
-            });
-        }
-    }, [selectedLayerId, saveState, onClose]);
 
     const handleFitToView = useCallback(() => {
         const container = containerRef.current;
@@ -575,9 +871,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         
         [...layersRef.current].forEach(layer => {
             if (layer.visible) {
-                 const w = layer.canvas.width * layer.scale;
-                 const h = layer.canvas.height * layer.scale;
-                 ctx.drawImage(layer.canvas, layer.x, layer.y, w, h);
+                 ctx.drawImage(layer.canvas, layer.x, layer.y, layer.width, layer.height);
             }
         });
         
@@ -599,7 +893,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
                 canvas.getContext('2d')?.drawImage(img, 0, 0);
-                const newLayer: Layer = { id: Date.now(), name: `Layer ${layersRef.current.length + 1}`, canvas, visible: true, x: (canvasSize.width - canvas.width) / 2, y: (canvasSize.height - canvas.height) / 2, scale: 1 };
+                const newLayer: Layer = { id: Date.now(), name: `Layer ${layersRef.current.length + 1}`, canvas, visible: true, x: (canvasSize.width - canvas.width) / 2, y: (canvasSize.height - canvas.height) / 2, width: canvas.width, height: canvas.height };
                 saveState(); setLayers(prev => [...prev, newLayer]); setSelectedLayerId(newLayer.id);
             }
         };
@@ -610,7 +904,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         const canvas = document.createElement('canvas');
         canvas.width = canvasSize.width; canvas.height = canvasSize.height;
         const ctx = canvas.getContext('2d')!; ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const newLayer: Layer = { id: Date.now(), name: `Background`, canvas, visible: true, x: 0, y: 0, scale: 1 };
+        const newLayer: Layer = { id: Date.now(), name: `Background`, canvas, visible: true, x: 0, y: 0, width: canvas.width, height: canvas.height };
         saveState(); setLayers(prev => [newLayer, ...prev]); setSelectedLayerId(newLayer.id);
     }, [canvasSize, saveState]);
 
@@ -629,7 +923,30 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         });
     }, [saveState]);
 
-    // --- Effects for Initialization & Observation ---
+    const handleOpenResizeModal = useCallback(() => {
+        setResizeDimensions(canvasSize);
+        setIsResizeModalOpen(true);
+    }, [canvasSize]);
+
+    const handleConfirmResize = useCallback(() => {
+        saveState();
+        const { width: newWidth, height: newHeight } = resizeDimensions;
+        if (newWidth <= 0 || newHeight <= 0) return;
+
+        const oldWidth = canvasSize.width;
+        const oldHeight = canvasSize.height;
+
+        const dx = (newWidth - oldWidth) / 2;
+        const dy = (newHeight - oldHeight) / 2;
+
+        const newLayers = layersRef.current.map(layer => ({ ...layer, x: layer.x + dx, y: layer.y + dy }));
+        
+        setLayers(newLayers);
+        setCanvasSize({ width: newWidth, height: newHeight });
+        setIsResizeModalOpen(false);
+        setTimeout(handleFitToView, 50); // Use a short timeout to allow state to update
+    }, [resizeDimensions, canvasSize, saveState, handleFitToView]);
+
 
     useEffect(() => {
         const img = new Image();
@@ -639,7 +956,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
             canvas.getContext('2d')?.drawImage(img, 0, 0);
-            const newLayer: Layer = { id: Date.now(), name: "Base Image", canvas, visible: true, x: 0, y: 0, scale: 1, };
+            const newLayer: Layer = { id: Date.now(), name: "Base Image", canvas, visible: true, x: 0, y: 0, width: canvas.width, height: canvas.height };
             setLayers([newLayer]);
             setSelectedLayerId(newLayer.id);
             setCanvasSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -685,7 +1002,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (textPrompt.visible || (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
+            if (isResizeModalOpen || textPrompt.visible || (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA/)) return;
             if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); }
             const isCtrl = e.ctrlKey || e.metaKey;
             if (isCtrl && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); handleUndo(); }
@@ -701,22 +1018,25 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
         return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }
-    }, [textPrompt.visible, handleUndo, handleRedo, handleDeleteLayer]);
+    }, [isResizeModalOpen, textPrompt.visible, handleUndo, handleRedo, handleDeleteLayer]);
 
     return {
         refs: { mainCanvasRef, containerRef },
         state: {
-            layers, selectedLayerId, tool, color, brushSize,
+            layers, selectedLayerId, tool, color, brushSize, eraserSize, rectangleStrokeSize,
             isRectFilled, history, historyIndex, interaction,
             cropBox, zoom, viewOffset, isSpacePressed, autoSelectLayer,
-            textPrompt, textSize, canvasSize
+            textPrompt, textSize, canvasSize, isResizeModalOpen, resizeDimensions,
+            isAspectRatioLocked,
         },
         actions: {
-            handlePointerDown, handleScaleInteractionStart, handleCropInteractionStart, handleWheel,
+            handlePointerDown, handleTransformInteractionStart, handleCropInteractionStart, handleWheel,
             handleUndo, handleRedo, addTextLayer, applyCrop, cancelCrop, handleDeleteLayer,
             handleFitToView, handleZoomTo100, handleSaveClick, onAddImageLayer, onAddColorLayer,
-            onToggleVisibility, onReorderLayers, setTool, setColor, setBrushSize,
+            onToggleVisibility, onReorderLayers, setTool, setColor, setBrushSize, setEraserSize, setRectangleStrokeSize,
             setIsRectFilled, setAutoSelectLayer, setTextPrompt, setTextSize, setSelectedLayerId,
+            handleOpenResizeModal, handleConfirmResize, setIsResizeModalOpen, setResizeDimensions,
+            setIsAspectRatioLocked,
         }
     };
 };

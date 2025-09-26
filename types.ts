@@ -82,7 +82,9 @@ export type Tool = 'brush' | 'eraser' | 'move' | 'crop' | 'text' | 'rectangle';
 export type InteractionType =
   | 'draw'
   | 'move'
-  | 'scale-br'
+  | 'transform-tl' | 'transform-t' | 'transform-tr'
+  | 'transform-l' | 'transform-r'
+  | 'transform-bl' | 'transform-b' | 'transform-br'
   | 'crop-move'
   | 'crop-t'
   | 'crop-b'
@@ -103,7 +105,8 @@ export interface Layer {
   visible: boolean;
   x: number;
   y: number;
-  scale: number;
+  width: number;
+  height: number;
 }
 
 export interface InteractionState {
@@ -116,9 +119,14 @@ export interface InteractionState {
   original: {
     x: number;
     y: number;
-    width?: number;
-    height?: number;
-    scale?: number;
+    width: number;
+    height: number;
+  };
+  strokeBounds?: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
   };
   initialPinch?: {
     dist: number;

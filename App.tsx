@@ -541,8 +541,6 @@ const App: React.FC = () => {
   };
 
   const handleSaveAndUpload = async (imageBlob: Blob) => {
-    setImageToEditBeforeUpload(null);
-
     const isSingleImageModel = selectedModel?.name.toLowerCase() === 'kontext';
     const oldImagesToDelete = (isSingleImageModel && uploadedImages.length > 0) ? [...uploadedImages] : [];
 
@@ -569,8 +567,12 @@ const App: React.FC = () => {
             });
           }
         }
+        // Close modal on success
+        setImageToEditBeforeUpload(null);
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
+        // On error, do not close the modal, show an alert instead.
+        alert(`Failed to save and upload image: ${errorMessage}`);
         setError(`Failed to save and upload image: ${errorMessage}`);
     } finally {
         setIsLoading(false);
@@ -584,7 +586,6 @@ const App: React.FC = () => {
     const originalIndex = editingImage.index;
     const oldImageToDelete = uploadedImages[originalIndex];
 
-    setEditingImage(null); // Close the modal immediately
     setIsLoading(true);
     setError(null);
     setLoadingMessage('Uploading edited image...');
@@ -607,8 +608,12 @@ const App: React.FC = () => {
                 console.warn('Failed to delete old source image after edit, continuing anyway:', err);
             });
         }
+        // Close modal on success
+        setEditingImage(null);
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
+        // On error, do not close the modal, show an alert instead.
+        alert(`Failed to save edited image: ${errorMessage}`);
         setError(`Failed to save edited image: ${errorMessage}`);
     } finally {
         setIsLoading(false);
@@ -745,6 +750,7 @@ const App: React.FC = () => {
           }}
           imageUrl={editorImageUrl}
           onSave={isEditingNew ? handleSaveAndUpload : handleEditorSave}
+          isLoading={isLoading}
         />
       )}
     </div>

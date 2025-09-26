@@ -8,7 +8,7 @@ const hotkeys = [
   { keys: ['R'], desc: 'Rectangle Tool' },
   { keys: ['T'], desc: 'Text Tool' },
   { keys: ['C'], desc: 'Crop Tool' },
-  { keys: ['Spacebar'], desc: 'Hold to Pan' },
+  { keys: ['MMB'], desc: 'Pan' },
   { keys: ['Alt + Wheel'], desc: 'Zoom In/Out' },
   { keys: ['Shift + Wheel'], desc: 'Change Brush Size' },
   { keys: ['[', ']'], desc: 'Decrease/Increase Brush Size' },
