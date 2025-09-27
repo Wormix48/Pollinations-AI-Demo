@@ -48,7 +48,7 @@ export const ImageEditorLayerPanel: React.FC<ImageEditorLayerPanelProps> = React
                 <button onClick={onDeleteLayer} disabled={!selectedLayerId || layers.length < 1} className="p-2 h-12 text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md disabled:text-gray-600 disabled:cursor-not-allowed" title="Delete Selected Layer (Del)"><DeleteIcon className="w-5 h-5"/></button>
             </div>
             <div className="h-12 border-l border-gray-700"></div>
-            <div className="flex items-center gap-2 h-full" style={{ minWidth: '220px' }}>
+            <div className="flex items-center gap-2 h-full" style={{ minWidth: '360px' }}>
                 {layers.slice().reverse().map((layer, index) => {
                     const originalIndex = layers.length - 1 - index;
                     return (

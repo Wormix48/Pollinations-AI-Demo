@@ -88,6 +88,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     const isInitialLoad = useRef(true);
     const layersRef = useRef<Layer[]>([]);
     const lastDrawPosRef = useRef({ x: 0, y: 0 });
+    const prevCanvasSizeRef = useRef<CanvasSize | null>(null);
+    const isUpdatingFromHistory = useRef(false);
 
     // State
     const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
@@ -177,11 +179,13 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     const restoreState = useCallback(async (index: number) => {
         if (index < 0 || index >= history.length) return;
         
+        isUpdatingFromHistory.current = true;
+        
         const historyEntry = JSON.parse(history[index]);
         const stateToRestore = Array.isArray(historyEntry) ? historyEntry : historyEntry.layers;
         const canvasSizeToRestore = historyEntry.canvasSize;
-        
-        const newLayersPromises = stateToRestore.map((savedLayer: any) => 
+
+        const newLayersPromises = stateToRestore.map((savedLayer: any) =>
             new Promise<Layer>(resolve => {
                 const img = new Image();
                 img.onload = () => {
@@ -191,14 +195,14 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
                     canvas.getContext('2d')?.drawImage(img, 0, 0);
                     resolve({
                         id: savedLayer.id, name: savedLayer.name, canvas,
-                        visible: savedLayer.visible, x: savedLayer.x, y: savedLayer.y, 
+                        visible: savedLayer.visible, x: savedLayer.x, y: savedLayer.y,
                         width: savedLayer.width, height: savedLayer.height
                     });
                 };
                 img.src = savedLayer.imageData;
             })
         );
-        
+
         const newLayers = await Promise.all(newLayersPromises);
         const layerMap = new Map(newLayers.map(l => [l.id, l]));
         const sortedLayers = stateToRestore.map((s: any) => layerMap.get(s.id)).filter(Boolean);
@@ -803,6 +807,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     }, [textSize, color, saveState]);
 
     const handleFitToView = useCallback(() => {
+        if (isUpdatingFromHistory.current) return;
         const container = containerRef.current;
         if (!container || !canvasSize.width || !canvasSize.height) return;
         const { clientWidth, clientHeight } = container;
@@ -836,10 +841,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         setLayers(updatedLayers);
         setTool('move');
     };
-    const cancelCrop = () => { 
-        if(historyIndex > 0) {
-            restoreState(historyIndex);
-        }
+    const cancelCrop = () => {
+        setCropBox({ x: 0, y: 0, width: canvasSize.width, height: canvasSize.height });
         setTool('move');
     };
 
@@ -947,6 +950,78 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         setTimeout(handleFitToView, 50); // Use a short timeout to allow state to update
     }, [resizeDimensions, canvasSize, saveState, handleFitToView]);
 
+    const handleFlip = useCallback((direction: 'horizontal' | 'vertical') => {
+        const selectedLayer = layersRef.current.find(l => l.id === selectedLayerId);
+        if (!selectedLayer) return;
+    
+        saveState();
+    
+        const sourceCanvas = selectedLayer.canvas;
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = sourceCanvas.width;
+        newCanvas.height = sourceCanvas.height;
+        const ctx = newCanvas.getContext('2d')!;
+    
+        if (direction === 'horizontal') {
+            ctx.translate(newCanvas.width, 0);
+            ctx.scale(-1, 1);
+        } else {
+            ctx.translate(0, newCanvas.height);
+            ctx.scale(1, -1);
+        }
+    
+        ctx.drawImage(sourceCanvas, 0, 0);
+    
+        const newLayer = { ...selectedLayer, canvas: newCanvas };
+        setLayers(ls => ls.map(l => l.id === selectedLayerId ? newLayer : l));
+    }, [selectedLayerId, saveState]);
+
+    const handleFlipHorizontal = useCallback(() => handleFlip('horizontal'), [handleFlip]);
+    const handleFlipVertical = useCallback(() => handleFlip('vertical'), [handleFlip]);
+    
+    const handleRotate = useCallback((degrees: 90 | -90) => {
+        const selectedLayer = layersRef.current.find(l => l.id === selectedLayerId);
+        if (!selectedLayer) return;
+    
+        saveState();
+    
+        const sourceCanvas = selectedLayer.canvas;
+        
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = sourceCanvas.height;
+        newCanvas.height = sourceCanvas.width;
+        
+        const ctx = newCanvas.getContext('2d')!;
+    
+        ctx.translate(newCanvas.width / 2, newCanvas.height / 2);
+        ctx.rotate((degrees * Math.PI) / 180);
+        ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+    
+        const centerX = selectedLayer.x + selectedLayer.width / 2;
+        const centerY = selectedLayer.y + selectedLayer.height / 2;
+    
+        const newWidth = selectedLayer.height;
+        const newHeight = selectedLayer.width;
+    
+        const newX = centerX - newWidth / 2;
+        const newY = centerY - newHeight / 2;
+        
+        const newLayer = { 
+            ...selectedLayer, 
+            canvas: newCanvas, 
+            width: newWidth,
+            height: newHeight,
+            x: newX,
+            y: newY,
+        };
+        
+        setLayers(ls => ls.map(l => l.id === selectedLayerId ? newLayer : l));
+    
+    }, [selectedLayerId, saveState]);
+    
+    const handleRotateLeft = useCallback(() => handleRotate(-90), [handleRotate]);
+    const handleRotateRight = useCallback(() => handleRotate(90), [handleRotate]);
+
 
     useEffect(() => {
         const img = new Image();
@@ -965,21 +1040,6 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         };
         img.src = imageUrl;
     }, [imageUrl]);
-    
-    useEffect(() => {
-        if (canvasSize.width > 0 && containerRef.current && isInitialLoad.current) {
-             handleFitToView();
-             isInitialLoad.current = false;
-        }
-    }, [canvasSize.width, canvasSize.height, handleFitToView]);
-
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        const resizeObserver = new ResizeObserver(() => handleFitToView());
-        resizeObserver.observe(container);
-        return () => resizeObserver.disconnect();
-    }, [handleFitToView]);
 
     useEffect(() => {
         if (layersRef.current.length > 0 && history.length === 0 && historyIndex === -1) {
@@ -990,15 +1050,32 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
     useEffect(() => {
         const canvas = mainCanvasRef.current;
         if (!canvas) return;
-        canvas.width = canvasSize.width;
-        canvas.height = canvasSize.height;
-        setCropBox({ x: 0, y: 0, width: canvasSize.width, height: canvasSize.height });
+
+        const newSize = canvasSize;
+        canvas.width = newSize.width;
+        canvas.height = newSize.height;
+
+        if (isInitialLoad.current && newSize.width > 0 && containerRef.current) {
+            handleFitToView();
+            isInitialLoad.current = false;
+        }
+        
+        prevCanvasSizeRef.current = newSize;
+
+        setCropBox({ x: 0, y: 0, width: newSize.width, height: newSize.height });
         drawCompositeCanvas();
-    }, [canvasSize, drawCompositeCanvas]);
+    }, [canvasSize, drawCompositeCanvas, handleFitToView]);
 
     useEffect(() => {
         drawCompositeCanvas();
     }, [layers, drawCompositeCanvas]);
+    
+    // This effect reliably resets the history update flag after a render, preventing race conditions.
+    useEffect(() => {
+        if (isUpdatingFromHistory.current) {
+            isUpdatingFromHistory.current = false;
+        }
+    }, [historyIndex]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1037,6 +1114,7 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             setIsRectFilled, setAutoSelectLayer, setTextPrompt, setTextSize, setSelectedLayerId,
             handleOpenResizeModal, handleConfirmResize, setIsResizeModalOpen, setResizeDimensions,
             setIsAspectRatioLocked,
+            handleFlipHorizontal, handleFlipVertical, handleRotateLeft, handleRotateRight,
         }
     };
 };

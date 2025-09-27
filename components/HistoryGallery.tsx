@@ -34,7 +34,7 @@ const HistoryItem: React.FC<{
         }`}
       />
       <div 
-        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 flex flex-wrap items-center justify-center gap-2 p-2 ${
+        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 flex flex-wrap items-center justify-center gap-1 p-1 ${
             areControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         // Prevent click from bubbling up to the main div
@@ -43,36 +43,36 @@ const HistoryItem: React.FC<{
         {isImageModelSelected && (
             <button
               onClick={onUseAsSource}
-              className="w-10 h-10 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
               title="Use as Source"
               aria-label="Use as Source"
             >
-              <ImageIcon className="w-5 h-5" />
+              <ImageIcon className="w-4 h-4" />
             </button>
         )}
         <button
           onClick={onView}
-          className="w-10 h-10 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
+          className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
           title="View Fullscreen"
           aria-label="View Fullscreen"
         >
-          <ExpandIcon className="w-5 h-5" />
+          <ExpandIcon className="w-4 h-4" />
         </button>
         <button
           onClick={onDownload}
-          className="w-10 h-10 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
+          className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
           title="Download Image"
           aria-label="Download Image"
         >
-          <DownloadIcon className="w-5 h-5" />
+          <DownloadIcon className="w-4 h-4" />
         </button>
         <button
           onClick={onDelete}
-          className="w-10 h-10 flex items-center justify-center bg-gray-900/70 text-red-400 hover:text-red-300 rounded-full transition-colors"
+          className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-red-400 hover:text-red-300 rounded-full transition-colors"
           title="Delete Image"
           aria-label="Delete Image"
         >
-          <DeleteIcon className="w-5 h-5" />
+          <DeleteIcon className="w-4 h-4" />
         </button>
       </div>
     </div>

@@ -60,7 +60,8 @@ export const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ isOpen, onCl
         setTool, setColor, setBrushSize, setEraserSize, setRectangleStrokeSize, setIsRectFilled, setAutoSelectLayer,
         setTextPrompt, setTextSize, setSelectedLayerId,
         handleOpenResizeModal, handleConfirmResize, setIsResizeModalOpen, setResizeDimensions,
-        setIsAspectRatioLocked
+        setIsAspectRatioLocked,
+        handleFlipHorizontal, handleFlipVertical, handleRotateLeft, handleRotateRight,
     } = actions;
 
     const textPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -124,7 +125,7 @@ export const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ isOpen, onCl
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                <aside className="w-16 bg-gray-900 p-2 flex flex-col items-center gap-2 overflow-y-auto flex-shrink-0">
+                <aside className="w-24 bg-gray-900 p-2 flex flex-col items-center gap-2 overflow-y-auto flex-shrink-0">
                     <ImageEditorToolbar tool={tool} setTool={setTool} onApplyCrop={applyCrop} onCancelCrop={cancelCrop} />
                 </aside>
 
@@ -231,6 +232,11 @@ export const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ isOpen, onCl
                                 onResizeCanvas={handleOpenResizeModal}
                                 onCancel={onClose} onSave={handleSaveClick} 
                                 isLoading={isLoading}
+                                selectedLayerId={selectedLayerId}
+                                onFlipHorizontal={handleFlipHorizontal}
+                                onFlipVertical={handleFlipVertical}
+                                onRotateLeft={handleRotateLeft}
+                                onRotateRight={handleRotateRight}
                             />
                         </div>
                     </div>

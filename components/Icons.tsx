@@ -246,3 +246,33 @@ export const CanvasSizeIcon: React.FC<IconProps> = (props) => (
     <path d="M3 3h4M21 3h-4M3 21h4M21 21h-4M3 3v4M21 3v4M3 21v-4M21 21v-4" />
   </svg>
 );
+
+export const FlipHorizontalIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M12 3v18" />
+        <path d="M8 7l-5 5 5 5" />
+        <path d="M16 7l5 5-5 5" />
+    </svg>
+);
+
+export const FlipVerticalIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M3 12h18" />
+        <path d="M7 8l5-5 5 5" />
+        <path d="M7 16l5 5 5 5" />
+    </svg>
+);
+
+export const RotateCcwIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M1 4v6h6" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+    </svg>
+);
+
+export const RotateCwIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M23 4v6h-6" />
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
+);
