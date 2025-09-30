@@ -135,6 +135,7 @@ export interface InteractionState {
   snapshot?: ImageData;
   snapshotCanvas?: HTMLCanvasElement;
   strokePoints?: { x: number; y: number }[];
+  isTouchEvent?: boolean;
 }
 
 export interface TextPromptState {

@@ -283,8 +283,11 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             setInteraction({ type: 'pan', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, original: { x: viewOffset.x, y: viewOffset.y, width: 0, height: 0 } });
             return;
         }
-        if ('touches' in e && e.touches.length === 2) { // Pinch zoom
-            const t1 = e.touches[0]; const t2 = e.touches[1];
+
+        const isTouchEvent = 'touches' in e;
+
+        if (isTouchEvent && (e as React.TouchEvent).touches.length === 2) { // Pinch zoom
+            const t1 = (e as React.TouchEvent).touches[0]; const t2 = (e as React.TouchEvent).touches[1];
             const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
             const midPoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
             setInteraction({ type: 'pinch', startX: midPoint.x, startY: midPoint.y, lastX: midPoint.x, lastY: midPoint.y, original: {x: viewOffset.x, y: viewOffset.y, width: 0, height: 0}, initialPinch: { dist, zoom } });
@@ -292,8 +295,8 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
         }
         if (textPrompt.visible) return;
         if (isSpacePressed) {
-            const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-            const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+            const clientX = isTouchEvent ? (e as React.TouchEvent).touches[0].clientX : (e as React.MouseEvent).clientX;
+            const clientY = isTouchEvent ? (e as React.TouchEvent).touches[0].clientY : (e as React.MouseEvent).clientY;
             setInteraction({ type: 'pan', startX: clientX, startY: clientY, lastX: clientX, lastY: clientY, original: { x: viewOffset.x, y: viewOffset.y, width: 0, height: 0 } });
             return;
         }
@@ -316,13 +319,15 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
             };
 
             if (tool === 'brush' || tool === 'eraser') {
-                drawOnLayer(selectedLayer, pos, pos, tool, color, currentSize, true);
-                drawCompositeCanvas();
+                if (!isTouchEvent) { // Don't draw dot on touch start to allow for pinch-zoom
+                    drawOnLayer(selectedLayer, pos, pos, tool, color, currentSize, true);
+                    drawCompositeCanvas();
+                }
                 lastDrawPosRef.current = pos;
-                setInteraction({ type: 'draw', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, strokeBounds });
+                setInteraction({ type: 'draw', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, strokeBounds, isTouchEvent });
             } else { // rectangle
                 const snapshot = selectedLayer.canvas.getContext('2d')!.getImageData(0, 0, selectedLayer.canvas.width, selectedLayer.canvas.height);
-                setInteraction({ type: 'draw-rect', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, snapshot, strokeBounds });
+                setInteraction({ type: 'draw-rect', layerId: selectedLayer.id, startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, original: { x: selectedLayer.x, y: selectedLayer.y, width: selectedLayer.width, height: selectedLayer.height }, snapshot, strokeBounds, isTouchEvent });
             }
         } else if (tool === 'move') {
             let targetLayer: Layer | null = null;
@@ -641,6 +646,20 @@ export const useImageEditor = ({ imageUrl, onClose, onSave }: useImageEditorProp
 
         const handleGlobalPointerUp = (e: MouseEvent | TouchEvent) => {
             if ('touches' in e && e.touches.length > 0) return;
+
+            if (interaction && interaction.type === 'draw' && interaction.isTouchEvent) {
+                const isTap = interaction.startX === interaction.lastX && interaction.startY === interaction.lastY;
+                if (isTap) {
+                    // A tap on a touch device didn't draw a dot on pointer down, so draw it now.
+                    let layer = layersRef.current.find(l => l.id === interaction.layerId);
+                    if (layer) {
+                        const pos = { x: interaction.startX, y: interaction.startY };
+                        const currentSize = tool === 'brush' ? brushSize : eraserSize;
+                        drawOnLayer(layer, pos, pos, tool, color, currentSize, true);
+                        drawCompositeCanvas();
+                    }
+                }
+            }
 
             if (interaction && (interaction.type === 'draw' || interaction.type === 'draw-rect')) {
                 const { layerId, original: originalLayerState, strokeBounds } = interaction;
