@@ -942,7 +942,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           )}
         </button>
         <a
-          href="https://boosty.to/ko16aska"
+          href="https://boosty.to/ko16aska/posts/5cd328b9-a7b6-4f48-9f57-f0e135488cfc"
           target="_blank"
           rel="noopener noreferrer"
           className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-400 hover:text-indigo-300 transition-colors"
