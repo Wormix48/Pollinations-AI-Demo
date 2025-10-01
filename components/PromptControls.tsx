@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
-import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon, ChevronDownIcon } from './Icons';
+import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon, ChevronDownIcon, CoffeeIcon } from './Icons';
 import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
 import { deleteImage } from '../services/imageHostService';
@@ -941,6 +941,15 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             </>
           )}
         </button>
+        <a
+          href="https://boosty.to/ko16aska"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-400 hover:text-indigo-300 transition-colors"
+        >
+          <CoffeeIcon className="w-4 h-4" />
+          <span>Buy me a coffee</span>
+        </a>
       </div>
     </div>
   );

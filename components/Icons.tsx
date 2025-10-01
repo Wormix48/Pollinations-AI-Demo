@@ -276,3 +276,13 @@ export const RotateCwIcon: React.FC<IconProps> = (props) => (
         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
     </svg>
 );
+
+export const CoffeeIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+    <path d="M2 8h14a4 4 0 0 1 4 4 4 4 0 0 1-4 4H2z" />
+    <line x1="6" y1="1" x2="6" y2="4" />
+    <line x1="10" y1="1" x2="10" y2="4" />
+    <line x1="14" y1="1" x2="14" y2="4" />
+  </svg>
+);
