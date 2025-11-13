@@ -1,4 +1,3 @@
-
 export const locales = {
   en: {
     header: {
@@ -265,7 +264,7 @@ export const locales = {
   ru: {
     header: {
       title: "Pollinations",
-      subtitle: "AI Демо",
+      subtitle: "AI Demo",
     },
     promptControls: {
       section: {
