@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { GenerationHistoryItem } from '../types';
 import { DownloadIcon, DeleteIcon, ExpandIcon, ImageIcon } from './Icons';
+import { useTranslation } from '../hooks/useTranslation';
 
 interface HistoryGalleryProps {
   history: GenerationHistoryItem[];
@@ -24,6 +26,7 @@ const HistoryItem: React.FC<{
   onUseAsSource: (e: React.MouseEvent) => void;
   isImageModelSelected: boolean;
 }> = ({ item, isActive, areControlsVisible, onSelect, onDelete, onDownload, onView, onUseAsSource, isImageModelSelected }) => {
+  const { t } = useTranslation();
   return (
     <div className="relative aspect-square rounded-md overflow-hidden" onClick={onSelect}>
       <img
@@ -44,8 +47,8 @@ const HistoryItem: React.FC<{
             <button
               onClick={onUseAsSource}
               className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
-              title="Use as Source"
-              aria-label="Use as Source"
+              title={t('historyGallery.item.useAsSource')}
+              aria-label={t('historyGallery.item.useAsSource')}
             >
               <ImageIcon className="w-4 h-4" />
             </button>
@@ -53,24 +56,24 @@ const HistoryItem: React.FC<{
         <button
           onClick={onView}
           className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
-          title="View Fullscreen"
-          aria-label="View Fullscreen"
+          title={t('historyGallery.item.viewFullscreen')}
+          aria-label={t('historyGallery.item.viewFullscreen')}
         >
           <ExpandIcon className="w-4 h-4" />
         </button>
         <button
           onClick={onDownload}
           className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
-          title="Download Image"
-          aria-label="Download Image"
+          title={t('historyGallery.item.download')}
+          aria-label={t('historyGallery.item.download')}
         >
           <DownloadIcon className="w-4 h-4" />
         </button>
         <button
           onClick={onDelete}
           className="w-8 h-8 flex items-center justify-center bg-gray-900/70 text-red-400 hover:text-red-300 rounded-full transition-colors"
-          title="Delete Image"
-          aria-label="Delete Image"
+          title={t('historyGallery.item.delete')}
+          aria-label={t('historyGallery.item.delete')}
         >
           <DeleteIcon className="w-4 h-4" />
         </button>
@@ -82,6 +85,7 @@ const HistoryItem: React.FC<{
 export const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, activeItemId, onSelect, onDelete, onDownload, onView, isImageModelSelected, onUseAsSource }) => {
   const [controlsVisibleId, setControlsVisibleId] = useState<number | null>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -111,7 +115,7 @@ export const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, activeI
 
   return (
     <div ref={galleryRef} className="bg-gray-800/50 rounded-lg border border-gray-700/50 mt-8 p-4 animate-fade-in">
-      <h3 className="font-semibold text-gray-200 mb-4">Generation History</h3>
+      <h3 className="font-semibold text-gray-200 mb-4">{t('historyGallery.title')}</h3>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {history.map(item => (
           <HistoryItem

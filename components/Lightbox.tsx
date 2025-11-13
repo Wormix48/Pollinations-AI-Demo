@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import type { GenerationHistoryItem } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from './Icons';
+import { useTranslation } from '../hooks/useTranslation';
 
 interface LightboxProps {
   item: GenerationHistoryItem;
@@ -13,6 +14,7 @@ interface LightboxProps {
 }
 
 export const Lightbox: React.FC<LightboxProps> = ({ item, onClose, onNext, onPrev, hasNext, hasPrev }) => {
+  const { t } = useTranslation();
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -38,14 +40,14 @@ export const Lightbox: React.FC<LightboxProps> = ({ item, onClose, onNext, onPre
                  <img src={item.imageDataUrl} alt={item.prompt} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
             </div>
             <div className="bg-gray-900/60 p-4 rounded-lg text-sm text-gray-300 max-h-[15vh] overflow-y-auto backdrop-blur-sm border border-white/10">
-                <strong className="text-gray-100">Prompt:</strong> {item.prompt}
+                <strong className="text-gray-100">{t('lightbox.prompt')}</strong> {item.prompt}
             </div>
         </div>
 
         <button 
             onClick={onClose} 
             className="absolute top-2 right-2 sm:top-4 sm:right-4 text-white bg-black/40 rounded-full p-2 hover:bg-black/70 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
-            aria-label="Close image viewer"
+            aria-label={t('lightbox.closeAria')}
         >
             <CloseIcon className="w-6 h-6" />
         </button>
@@ -54,7 +56,7 @@ export const Lightbox: React.FC<LightboxProps> = ({ item, onClose, onNext, onPre
             <button 
                 onClick={(e) => { e.stopPropagation(); onPrev(); }}
                 className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 text-white bg-black/40 rounded-full p-2 hover:bg-black/70 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
-                aria-label="Previous image"
+                aria-label={t('lightbox.prevAria')}
             >
                 <ChevronLeftIcon className="w-8 h-8" />
             </button>
@@ -63,7 +65,7 @@ export const Lightbox: React.FC<LightboxProps> = ({ item, onClose, onNext, onPre
             <button 
                 onClick={(e) => { e.stopPropagation(); onNext(); }}
                 className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 text-white bg-black/40 rounded-full p-2 hover:bg-black/70 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
-                aria-label="Next image"
+                aria-label={t('lightbox.nextAria')}
             >
                 <ChevronRightIcon className="w-8 h-8" />
             </button>

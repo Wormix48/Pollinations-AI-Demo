@@ -1,6 +1,8 @@
+
 import React from 'react';
 import { ImageIcon, LoadingSpinner, WarningIcon, ExternalLinkIcon, UpdateIcon, CloseIcon } from './Icons';
 import type { GenerationHistoryItem } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
 
 interface ImageDisplayProps {
   activeHistoryItem: GenerationHistoryItem | null;
@@ -25,6 +27,7 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
   isImageModelSelected,
   onUseAsSource,
 }) => {
+  const { t } = useTranslation();
   const generatedImageUrl = activeHistoryItem?.imageDataUrl;
   const prompt = activeHistoryItem?.prompt ?? '';
   const translationUsedFallback = activeHistoryItem?.translationUsedFallback ?? false;
@@ -37,8 +40,8 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
   const Placeholder = () => (
     <div className="flex flex-col items-center justify-center gap-4 text-center text-gray-500">
       <ImageIcon className="w-24 h-24" />
-      <h2 className="text-xl font-semibold text-gray-400">Your masterpiece awaits</h2>
-      <p>Enter your idea, choose a model, and watch it come to life.</p>
+      <h2 className="text-xl font-semibold text-gray-400">{t('imageDisplay.placeholder.title')}</h2>
+      <p>{t('imageDisplay.placeholder.body')}</p>
     </div>
   );
 
@@ -49,15 +52,15 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
             <LoadingSpinner className="w-16 h-16 absolute top-1/2 left-1/2 -mt-8 -ml-8 text-indigo-500 animate-pulse-fast"/>
         </div>
         <h2 className="text-xl font-semibold text-indigo-400">{loadingMessage}</h2>
-        <p className="max-w-md">Our AI is working its magic. This can take a moment, especially for complex creations.</p>
+        <p className="max-w-md">{t('imageDisplay.loading.body')}</p>
         {onCancel && (
           <button
             onClick={onCancel}
             className="mt-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-red-300 hover:text-red-200 transition-colors duration-200 py-2 px-4 rounded-md bg-red-900/40 hover:bg-red-900/60 ring-1 ring-inset ring-red-500/50"
-            aria-label="Cancel image generation"
+            aria-label={t('imageDisplay.loading.cancelAria')}
           >
             <CloseIcon className="w-4 h-4" />
-            Cancel
+            {t('imageDisplay.loading.cancel')}
           </button>
         )}
     </div>
@@ -71,7 +74,7 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
         <div className="w-full max-w-3xl animate-fade-in flex flex-col gap-4 items-center">
           <div className="flex flex-col items-center justify-center gap-4 text-center text-red-400 bg-red-900/20 p-8 rounded-lg w-full">
               <WarningIcon className="w-16 h-16"/>
-              <h2 className="text-xl font-semibold">Generation Failed</h2>
+              <h2 className="text-xl font-semibold">{t('imageDisplay.error.title')}</h2>
               <p className="break-words">{error}</p>
           </div>
           <div className="flex items-center justify-between w-full">
@@ -82,7 +85,7 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
                   className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 py-2 px-3 rounded-md hover:bg-indigo-500/10"
                 >
                   <UpdateIcon className="w-4 h-4" />
-                  Retry Generation
+                  {t('imageDisplay.error.retry')}
                 </button>
               )}
               {lastRequestUrl && (
@@ -93,7 +96,7 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
                   className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 py-2 px-3 rounded-md hover:bg-indigo-500/10"
                 >
                   <ExternalLinkIcon className="w-4 h-4" />
-                  Open Generated Link
+                  {t('imageDisplay.error.openLink')}
                 </a>
               )}
             </div>
@@ -106,20 +109,20 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
           </div>
           {sourceImageUrls.length > 0 && (
             <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
-              <p className="text-sm font-semibold text-gray-200 mb-2">Source Image(s):</p>
+              <p className="text-sm font-semibold text-gray-200 mb-2">{t('imageDisplay.result.sourceImages')}</p>
               <div className="flex flex-wrap gap-2">
                 {sourceImageUrls.map((url, index) => (
-                    <img key={index} src={url} alt={`Source for image-to-image generation ${index + 1}`} className="max-h-24 rounded-md" />
+                    <img key={index} src={url} alt={t('imageDisplay.result.sourceImageAlt', { index: index + 1 })} className="max-h-24 rounded-md" />
                 ))}
               </div>
             </div>
           )}
           <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50">
-            <p className="text-sm text-gray-300 break-words"><strong className="font-semibold text-gray-200">Prompt:</strong> {prompt}</p>
+            <p className="text-sm text-gray-300 break-words"><strong className="font-semibold text-gray-200">{t('imageDisplay.result.prompt')}</strong> {prompt}</p>
             {(translationUsedFallback || enhancementFailed) && (
               <div className="mt-3 pt-3 border-t border-gray-700/60 text-xs text-yellow-400/90 space-y-1">
-                {translationUsedFallback && <p><strong>Note:</strong> Auto-translation to English failed; the original text was used.</p>}
-                {enhancementFailed && <p><strong>Note:</strong> Prompt auto-enhancement failed; the original prompt was used.</p>}
+                {translationUsedFallback && <p><strong>{t('imageDisplay.result.notes.translationFailed').split(':')[0]}:</strong> {t('imageDisplay.result.notes.translationFailed').split(':')[1]}</p>}
+                {enhancementFailed && <p><strong>{t('imageDisplay.result.notes.enhancementFailed').split(':')[0]}:</strong> {t('imageDisplay.result.notes.enhancementFailed').split(':')[1]}</p>}
               </div>
             )}
           </div>
@@ -132,17 +135,17 @@ export const ImageDisplay: React.FC<ImageDisplayProps> = ({
                 className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
               >
                 <ExternalLinkIcon className="w-4 h-4" />
-                Open Full Image
+                {t('imageDisplay.result.openFullImage')}
               </a>
             )}
             {activeHistoryItem && isImageModelSelected && (
               <button
                 onClick={() => onUseAsSource(activeHistoryItem.imageDataUrl)}
                 className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-indigo-300 hover:text-indigo-200 transition-colors duration-200 self-start py-2 px-3 rounded-md hover:bg-indigo-500/10"
-                aria-label="Use this image as a source for a new generation"
+                aria-label={t('imageDisplay.result.useAsSourceAria')}
               >
                 <ImageIcon className="w-4 h-4" />
-                Use as Source
+                {t('imageDisplay.result.useAsSource')}
               </button>
             )}
           </div>

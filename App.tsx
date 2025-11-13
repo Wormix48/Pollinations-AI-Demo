@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptControls } from './components/PromptControls';
@@ -11,6 +12,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import type { GenerationModel, PollinationsImageParams, Style, SelectedStyle, Preset, GenerationHistoryItem, UploadedImage } from './types';
 import { ASPECT_RATIOS } from './constants';
 import { uploadImageWithVerification, deleteImage } from './services/imageHostService';
+import { useTranslation } from './hooks/useTranslation';
 
 const blobToDataURL = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -22,6 +24,7 @@ const blobToDataURL = (blob: Blob): Promise<string> => {
 };
 
 const App: React.FC = () => {
+  const { t } = useTranslation();
   const [prompt, setPrompt] = useState<string>('');
   
   // Model state
@@ -241,7 +244,7 @@ const App: React.FC = () => {
   const handleUseAsSource = useCallback(async (imageDataUrl: string) => {
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Uploading source image...');
+    setLoadingMessage(t('app.loadingMessage.uploadingSource'));
     
     // Make a copy of the old images to delete them after the new one is set.
     const oldImagesToDelete = [...uploadedImages];
@@ -271,23 +274,23 @@ const App: React.FC = () => {
         
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
-        setError(`Failed to set source image: ${errorMessage}`);
+        setError(t('app.error.setSourceFailed', { errorMessage }));
     } finally {
         setIsLoading(false);
         setLoadingMessage('');
     }
-  }, [uploadedImages, setUploadedImages]);
+  }, [uploadedImages, setUploadedImages, t]);
 
   const handleGenerate = useCallback(async () => {
     const basePrompt = prompt.trim();
     const activeStyles = selectedStyles.map(s => s.style).filter((style): style is Style => style !== null);
 
     if (!basePrompt && activeStyles.length === 0) {
-      setError('Please enter a prompt or select a style.');
+      setError(t('app.error.emptyPrompt'));
       return;
     }
     if (!selectedModel) {
-      setError('Please select a model.');
+      setError(t('app.error.noModel'));
       return;
     }
 
@@ -304,7 +307,7 @@ const App: React.FC = () => {
     try {
       let workingPrompt = basePrompt;
       if (isTranslateEnabled && basePrompt) {
-          setLoadingMessage('Translating prompt...');
+          setLoadingMessage(t('app.loadingMessage.translating'));
           const { translatedText, usedFallback } = await translateToEnglishIfNeeded(basePrompt, geminiApiKey);
           workingPrompt = translatedText;
           if (usedFallback && geminiApiKey) {
@@ -322,7 +325,7 @@ const App: React.FC = () => {
       promptWithStyle = promptWithStyle.split(',').map(s => s.trim()).filter(Boolean).join(', ');
 
       if (!promptWithStyle) {
-        setError('Prompt became empty after processing. Please check your input.');
+        setError(t('app.error.promptBecameEmpty'));
         setIsLoading(false);
         return;
       }
@@ -336,7 +339,7 @@ const App: React.FC = () => {
       if (isEnhanceEnabled && !isEnhancementDisabled) {
         // Use Gemini for enhancement if a valid key exists.
         if (isGeminiKeyValid && geminiApiKey) {
-          setLoadingMessage('Enhancing prompt...');
+          setLoadingMessage(t('app.loadingMessage.enhancing'));
           const combinedStylePrompt = activeStyles.map(style => style.prompt).join(', ');
           const { enhancedPrompt, enhancementFailed } = await enhancePrompt(promptWithStyle, selectedModel.id, geminiApiKey, combinedStylePrompt);
           promptToUse = enhancedPrompt;
@@ -350,7 +353,7 @@ const App: React.FC = () => {
         usePollinationsEnhance = false;
       }
       
-      setLoadingMessage('Generating your masterpiece...');
+      setLoadingMessage(t('app.loadingMessage.generating'));
       
       let finalSeed = seed;
       if (seedMode === 'random') {
@@ -382,7 +385,7 @@ const App: React.FC = () => {
         const imageUrls = uploadedImages.map(img => img.url);
         const invalidUrl = imageUrls.find(url => !url.startsWith('http'));
         if (invalidUrl) {
-            setError("Please provide a valid public URL for all images. Upload images if you don't have a URL.");
+            setError(t('app.error.invalidUrl'));
             setIsLoading(false);
             return;
         }
@@ -390,7 +393,7 @@ const App: React.FC = () => {
       }
       
       const onRetryCallback = (attempt: number, maxRetries: number) => {
-        setLoadingMessage(`Generation is slow... Retrying (attempt ${attempt}/${maxRetries}).`);
+        setLoadingMessage(t('app.loadingMessage.retry', { attempt, maxRetries }));
       };
 
       const { blob, requestUrl } = await generateImage(params, controller.signal, onRetryCallback);
@@ -415,7 +418,7 @@ const App: React.FC = () => {
       } else {
         console.error(e);
         const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-        setError(`An error occurred during generation: ${errorMessage}. Please check the console for details.`);
+        setError(t('app.error.generic', { errorMessage }));
         if (e && typeof (e as any).requestUrl === 'string') {
           setLastRequestUrl((e as any).requestUrl);
         }
@@ -425,12 +428,12 @@ const App: React.FC = () => {
       setLoadingMessage('');
       abortControllerRef.current = null;
     }
-  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages, isImageModelSelected, isHighQuality, resolutionMultiplier]);
+  }, [prompt, selectedModel, selectedStyles, width, height, seed, seedMode, isEnhanceEnabled, isTranslateEnabled, nologo, nofeed, isPrivate, isSafeMode, setHistory, geminiApiKey, isGeminiKeyValid, uploadedImages, isImageModelSelected, isHighQuality, resolutionMultiplier, t]);
   
   // Preset Handlers
   const handleSavePreset = (name: string) => {
     if (!name.trim()) {
-      alert("Please enter a name for the preset.");
+      alert(t('app.alert.presetName'));
       return;
     }
     const newPreset: Preset = {
@@ -467,7 +470,7 @@ const App: React.FC = () => {
   const handleLoadPreset = (name: string) => {
     const preset = presets.find(p => p.name === name);
     if (!preset) {
-      alert("Preset not found!");
+      alert(t('app.alert.presetNotFound'));
       return;
     };
     
@@ -546,7 +549,7 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Uploading image...');
+    setLoadingMessage(t('app.loadingMessage.uploading'));
 
     try {
         const extension = imageBlob.type.split('/')[1] || 'png';
@@ -572,8 +575,8 @@ const App: React.FC = () => {
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
         // On error, do not close the modal, show an alert instead.
-        alert(`Failed to save and upload image: ${errorMessage}`);
-        setError(`Failed to save and upload image: ${errorMessage}`);
+        alert(t('app.alert.saveImageFailed', { errorMessage }));
+        setError(t('app.alert.saveImageFailed', { errorMessage }));
     } finally {
         setIsLoading(false);
         setLoadingMessage('');
@@ -588,7 +591,7 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Uploading edited image...');
+    setLoadingMessage(t('app.loadingMessage.uploadingEdited'));
 
     try {
         const extension = imageBlob.type.split('/')[1] || 'png';
@@ -613,8 +616,8 @@ const App: React.FC = () => {
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown upload error.';
         // On error, do not close the modal, show an alert instead.
-        alert(`Failed to save edited image: ${errorMessage}`);
-        setError(`Failed to save edited image: ${errorMessage}`);
+        alert(t('app.alert.saveEditedFailed', { errorMessage }));
+        setError(t('app.alert.saveEditedFailed', { errorMessage }));
     } finally {
         setIsLoading(false);
         setLoadingMessage('');

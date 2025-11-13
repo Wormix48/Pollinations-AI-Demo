@@ -1,5 +1,6 @@
+
 {
-  "name": "Pollinations AI Demo",
-  "description": "Generate stunning images with AI. Your prompts are automatically enhanced for superior results. Choose from various artistic models to bring your vision to life.",
+  "name": "Pollinations AI Демо",
+  "description": "Создавайте потрясающие изображения с помощью ИИ. Ваши запросы автоматически улучшаются для достижения превосходных результатов. Выбирайте из различных художественных моделей, чтобы воплотить свое видение в жизнь.",
   "requestFramePermissions": []
 }

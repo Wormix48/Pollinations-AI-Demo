@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { GenerationModel, Style, SelectedStyle, Preset, UploadedImage } from '../types';
 import { GenerateIcon, LoadingSpinner, AddTextIcon, DeleteIcon, UpdateIcon, UploadIcon, CloseIcon, CheckIcon, WarningIcon, EditIcon, ChevronDownIcon, CoffeeIcon } from './Icons';
@@ -5,6 +6,7 @@ import { ASPECT_RATIO_GROUPS, ASPECT_RATIOS } from '../constants';
 import { STYLES } from '../styles';
 import { deleteImage } from '../services/imageHostService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useTranslation } from '../hooks/useTranslation';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -109,6 +111,7 @@ interface MultiImageUploaderProps {
 
 
 const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages, setUploadedImages, onAspectRatioChange, onDimensionChange, selectedModel, onEdit, onAddNewImage }) => {
+  const { t } = useTranslation();
   const [urlInput, setUrlInput] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,7 +229,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
   
   return (
     <div ref={uploaderRef} className="flex flex-col gap-3">
-      <label className="text-sm font-medium text-gray-300">Source Image{isKontext ? '' : '(s)'} (URL or Upload)</label>
+      <label className="text-sm font-medium text-gray-300">{t(isKontext ? 'promptControls.sourceImage.kontextLabel' : 'promptControls.sourceImage.label')}</label>
       
       {uploadedImages.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
@@ -244,16 +247,16 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
                       <button 
                         onClick={() => onEdit(index)}
                         className="p-2 bg-gray-900/70 text-gray-200 hover:text-white rounded-full transition-colors"
-                        title="Edit image"
-                        aria-label="Edit image"
+                        title={t('promptControls.sourceImage.editImage')}
+                        aria-label={t('promptControls.sourceImage.editImage')}
                       >
                           <EditIcon className="w-5 h-5" />
                       </button>
                       <button 
                         onClick={() => handleRemoveImage(index)}
                         className="p-2 bg-gray-900/70 text-red-400 hover:text-red-300 rounded-full transition-colors"
-                        title="Remove image"
-                        aria-label="Remove image"
+                        title={t('promptControls.sourceImage.removeImage')}
+                        aria-label={t('promptControls.sourceImage.removeImage')}
                       >
                           <CloseIcon className="w-5 h-5" />
                       </button>
@@ -268,7 +271,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
           type="text"
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
-          placeholder="Paste an image URL..."
+          placeholder={t('promptControls.sourceImage.pasteUrl')}
           className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
           aria-label="Source image URL for image-to-image models"
         />
@@ -277,7 +280,7 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
           disabled={!urlInput.trim()}
           className="px-3 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Add
+          {t('promptControls.sourceImage.addUrl')}
         </button>
       </div>
 
@@ -298,14 +301,14 @@ const MultiImageUploader: React.FC<MultiImageUploaderProps> = ({ uploadedImages,
         <div className="flex flex-col items-center justify-center gap-2">
             <UploadIcon className="w-8 h-8 text-gray-500" />
             <p className="text-sm text-gray-400">
-                <span className="font-semibold text-indigo-400">Click to upload</span> or drag and drop
+                <span className="font-semibold text-indigo-400">{t('promptControls.sourceImage.upload.click')}</span> {t('promptControls.sourceImage.upload.drag')}
             </p>
-            <p className="text-xs text-gray-500">Image will open in editor before use</p>
+            <p className="text-xs text-gray-500">{t('promptControls.sourceImage.upload.hint')}</p>
         </div>
       </div>
       <p className="text-xs text-yellow-400/80 text-center mt-1 px-4">
-        <span className="uppercase font-semibold block">Images are uploaded to ImgBB for processing. Do not upload confidential data.</span>
-        <span className="block mt-1">Clicking '×' on an image permanently deletes it from ImgBB.</span>
+        <span className="uppercase font-semibold block">{t('promptControls.sourceImage.disclaimer.title')}</span>
+        <span className="block mt-1">{t('promptControls.sourceImage.disclaimer.body')}</span>
       </p>
     </div>
   );
@@ -327,6 +330,7 @@ const StyleSelector: React.FC<{
   isDraggable: boolean;
   dndProps: any;
 }> = ({ item, onSelect, onRemove, onCopyToPrompt, canRemove, isDraggable, dndProps }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -352,16 +356,16 @@ const StyleSelector: React.FC<{
             className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-sm text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 text-left flex justify-between items-center"
             aria-haspopup="listbox" aria-expanded={isOpen}
           >
-            <span className="">{item.style ? item.style.name : 'Select a style...'}</span>
+            <span className="">{item.style ? item.style.name : t('promptControls.styles.selectPlaceholder')}</span>
             <svg className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isOpen ? 'transform rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
         </button>
         {isOpen && (
            <div className="absolute z-20 mt-1 w-full bg-gray-800 border border-gray-600 rounded-md shadow-lg">
               <div className="p-2">
-                  <input type="text" placeholder="Search styles..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500" />
+                  <input type="text" placeholder={t('promptControls.styles.searchPlaceholder')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500" />
               </div>
               <ul className="max-h-60 overflow-y-auto" role="listbox">
-                  <li className="px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer" onClick={() => { onSelect(null); setIsOpen(false); setSearchTerm(''); }} role="option">None</li>
+                  <li className="px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer" onClick={() => { onSelect(null); setIsOpen(false); setSearchTerm(''); }} role="option">{t('promptControls.styles.none')}</li>
                   {filteredStyles.map(style => (
                     <li key={style.name} className="px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer truncate" onClick={() => { onSelect(style); setIsOpen(false); setSearchTerm(''); }} role="option" aria-selected={item.style?.name === style.name} title={style.name}>
                       {style.name}
@@ -375,8 +379,8 @@ const StyleSelector: React.FC<{
         <button
           onClick={onCopyToPrompt}
           className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
-          title="Add style to prompt text"
-          aria-label="Add style to prompt text"
+          title={t('promptControls.styles.copyToPromptTooltip')}
+          aria-label={t('promptControls.styles.copyToPromptTooltip')}
         >
           <AddTextIcon className="w-5 h-5" />
         </button>
@@ -426,20 +430,23 @@ const AspectRatioButton: React.FC<{
     ratio: { label: string; value: string };
     currentRatio: string;
     onClick: (value: string) => void;
-}> = ({ ratio, currentRatio, onClick }) => (
-    <button 
-      key={ratio.value} 
-      onClick={() => onClick(ratio.value)}
-      className={`text-xs w-full font-semibold p-2 rounded-md transition-colors duration-200 border ${
-        currentRatio === ratio.value 
-          ? 'bg-indigo-600 border-indigo-500 text-white' 
-          : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
-      }`}
-      aria-label={`Set aspect ratio to ${ratio.label}`}
-    >
-      {ratio.label}
-    </button>
-);
+}> = ({ ratio, currentRatio, onClick }) => {
+    const { t } = useTranslation();
+    return (
+        <button 
+          key={ratio.value} 
+          onClick={() => onClick(ratio.value)}
+          className={`text-xs w-full font-semibold p-2 rounded-md transition-colors duration-200 border ${
+            currentRatio === ratio.value 
+              ? 'bg-indigo-600 border-indigo-500 text-white' 
+              : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
+          }`}
+          aria-label={t('promptControls.advanced.aspectRatio.ariaLabel', { label: ratio.label })}
+        >
+          {ratio.label}
+        </button>
+    );
+};
 
 
 export const PromptControls: React.FC<PromptControlsProps> = ({
@@ -495,6 +502,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   resolutionMultiplier,
   setResolutionMultiplier,
 }) => {
+  const { t } = useTranslation();
   const oneToOneRatio = ASPECT_RATIO_GROUPS.landscape.find(r => r.value === '1:1');
   const landscapeRatios = ASPECT_RATIO_GROUPS.landscape.filter(r => r.value !== '1:1');
   const portraitRatios = ASPECT_RATIO_GROUPS.portrait;
@@ -556,8 +564,8 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   
   const promptPlaceholder =
     isImageModelSelected
-      ? 'Describe what you want to create, or what to change in the uploaded image(s)'
-      : 'e.g., A majestic lion wearing a crown in a futuristic city';
+      ? t('promptControls.prompt.placeholder.imageModel')
+      : t('promptControls.prompt.placeholder.default');
 
   const handleAddStyle = () => {
     if (selectedStyles.length < 3) {
@@ -614,7 +622,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
   return (
     <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 flex flex-col h-full overflow-hidden">
       <div className="flex-grow overflow-y-auto">
-        <CollapsibleSection title="1. Enter Your Idea" isOpen={panelsOpen.idea} onToggle={() => togglePanel('idea')}>
+        <CollapsibleSection title={t('promptControls.section.idea')} isOpen={panelsOpen.idea} onToggle={() => togglePanel('idea')}>
           <div className="flex flex-col gap-4">
             <div>
               <div className="relative">
@@ -643,7 +651,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="2. Choose Style(s)" isOpen={panelsOpen.styles} onToggle={() => togglePanel('styles')}>
+        <CollapsibleSection title={t('promptControls.section.styles')} isOpen={panelsOpen.styles} onToggle={() => togglePanel('styles')}>
           <div className="flex flex-col gap-3">
             {selectedStyles.map((item, index) => (
                <StyleSelector
@@ -669,13 +677,13 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
             ))}
              {selectedStyles.length < 3 && (
               <button onClick={handleAddStyle} className="w-full text-sm text-indigo-300 hover:text-indigo-200 p-2 rounded-md hover:bg-indigo-500/10 transition-colors">
-                + Add Style
+                {t('promptControls.styles.addStyle')}
               </button>
             )}
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="3. Choose a Model" isOpen={panelsOpen.model} onToggle={() => togglePanel('model')}>
+        <CollapsibleSection title={t('promptControls.section.model')} isOpen={panelsOpen.model} onToggle={() => togglePanel('model')}>
           <div className="flex items-center gap-2">
             <select
               id="model"
@@ -686,12 +694,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
               }}
               disabled={modelsLoading || !!modelsError}
               className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-              aria-label="Select generation model"
+              aria-label={t('promptControls.models.label')}
             >
               {modelsLoading ? (
-                <option>Loading models...</option>
+                <option>{t('promptControls.models.loading')}</option>
               ) : modelsError ? (
-                <option>Error loading models</option>
+                <option>{t('promptControls.models.error')}</option>
               ) : (
                 models.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -705,7 +713,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 value={resolutionMultiplier}
                 onChange={(e) => handleMultiplierChange(Number(e.target.value))}
                 className="bg-gray-900/80 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                aria-label="Select resolution multiplier"
+                aria-label={t('promptControls.models.resolutionLabel')}
               >
                 <option value={1}>1k</option>
                 <option value={2}>2k</option>
@@ -716,7 +724,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           {modelsError && <p className="text-xs text-red-400 mt-1">{modelsError}</p>}
         </CollapsibleSection>
 
-        <CollapsibleSection title="4. Presets" isOpen={panelsOpen.presets} onToggle={() => togglePanel('presets')}>
+        <CollapsibleSection title={t('promptControls.section.presets')} isOpen={panelsOpen.presets} onToggle={() => togglePanel('presets')}>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2 items-center">
               <select
@@ -726,7 +734,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 aria-label="Select a preset to load"
                 disabled={presets.length === 0}
               >
-                <option value="">{presets.length > 0 ? 'Select a preset...' : 'No presets saved'}</option>
+                <option value="">{presets.length > 0 ? t('promptControls.presets.selectPlaceholder') : t('promptControls.presets.noPresets')}</option>
                 {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
               </select>
               <button
@@ -735,13 +743,13 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 className="px-3 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:bg-indigo-600/20 disabled:cursor-not-allowed"
                 title="Load selected preset"
               >
-                Load
+                {t('promptControls.presets.load')}
               </button>
               <button
                 onClick={() => onSavePreset(selectedPreset)}
                 disabled={!selectedPreset}
                 className="p-2 text-gray-400 hover:text-white hover:bg-indigo-500/20 rounded-md transition-colors disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                title="Update selected preset with current settings"
+                title={t('promptControls.presets.updateTooltip')}
               >
                 <UpdateIcon className="w-5 h-5" />
               </button>
@@ -749,7 +757,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 onClick={() => onDeletePreset(selectedPreset)}
                 disabled={!selectedPreset}
                 className="p-2 text-gray-400 hover:text-white hover:bg-red-500/20 rounded-md transition-colors disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                title="Delete selected preset"
+                title={t('promptControls.presets.deleteTooltip')}
               >
                 <DeleteIcon className="w-5 h-5" />
               </button>
@@ -759,23 +767,23 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 type="text"
                 value={newPresetName}
                 onChange={(e) => setNewPresetName(e.target.value)}
-                placeholder="New preset name..."
+                placeholder={t('promptControls.presets.newNamePlaceholder')}
                 className="flex-grow w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
               />
               <button 
                 onClick={() => { onSavePreset(newPresetName); setNewPresetName(''); }}
                 className="px-4 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors"
               >
-                Save
+                {t('promptControls.presets.save')}
               </button>
             </div>
           </div>
         </CollapsibleSection>
         
-        <CollapsibleSection title="Gemini API Key" isOpen={panelsOpen.gemini} onToggle={() => togglePanel('gemini')}>
+        <CollapsibleSection title={t('promptControls.section.gemini')} isOpen={panelsOpen.gemini} onToggle={() => togglePanel('gemini')}>
           <div className="space-y-3">
             <p className="text-xs text-gray-400">
-                Provide your own Gemini API key to enable faster, higher-quality prompt enhancement and translation.
+                {t('promptControls.gemini.description')}
             </p>
             <div className="flex items-center gap-2">
                 <div className="relative flex-grow">
@@ -783,7 +791,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                     type="password"
                     value={localApiKey}
                     onChange={(e) => setLocalApiKey(e.target.value)}
-                    placeholder="Enter your Gemini API Key"
+                    placeholder={t('promptControls.gemini.inputPlaceholder')}
                     className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 pr-10"
                     aria-label="Gemini API Key"
                 />
@@ -802,22 +810,22 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                 disabled={isCheckingGeminiKey || localApiKey === geminiApiKey}
                 className="px-4 py-2 text-sm bg-indigo-600/50 hover:bg-indigo-600/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                {isCheckingGeminiKey ? 'Checking...' : 'Save'}
+                {isCheckingGeminiKey ? t('promptControls.gemini.checking') : t('promptControls.gemini.save')}
                 </button>
             </div>
             {isGeminiKeyValid === false && geminiApiKey && !isCheckingGeminiKey && (
-                <p className="text-xs text-red-400 mt-2">The provided API key is invalid.</p>
+                <p className="text-xs text-red-400 mt-2">{t('promptControls.gemini.invalidKey')}</p>
             )}
             {isGeminiKeyValid === true && (
-                <p className="text-xs text-green-400 mt-2">Gemini API key is valid and saved.</p>
+                <p className="text-xs text-green-400 mt-2">{t('promptControls.gemini.validKey')}</p>
             )}
           </div>
         </CollapsibleSection>
         
-        <CollapsibleSection title="Advanced Settings" isOpen={panelsOpen.advanced} onToggle={() => togglePanel('advanced')}>
+        <CollapsibleSection title={t('promptControls.section.advanced')} isOpen={panelsOpen.advanced} onToggle={() => togglePanel('advanced')}>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-2">Aspect Ratio</label>
+              <label className="block text-xs font-medium text-gray-400 mb-2">{t('promptControls.advanced.aspectRatio.label')}</label>
               <div className="flex flex-col gap-3 mb-3">
                 {oneToOneRatio && (
                    <AspectRatioButton 
@@ -855,9 +863,9 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                           id="width" 
                           value={width} 
                           onChange={(e) => onDimensionChange(e.target.value, height)} 
-                          placeholder="Width"
+                          placeholder={t('promptControls.advanced.widthPlaceholder')}
                           className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                          aria-label="Image width"
+                          aria-label={t('promptControls.advanced.widthPlaceholder')}
                         />
                   </div>
                    <div>
@@ -866,19 +874,19 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                           id="height" 
                           value={height} 
                           onChange={(e) => onDimensionChange(width, e.target.value)} 
-                          placeholder="Height"
+                          placeholder={t('promptControls.advanced.heightPlaceholder')}
                           className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                          aria-label="Image height"
+                          aria-label={t('promptControls.advanced.heightPlaceholder')}
                         />
                   </div>
               </div>
             </div>
             <div>
-              <label htmlFor="seed" className="block text-xs font-medium text-gray-400 mb-1">Seed</label>
+              <label htmlFor="seed" className="block text-xs font-medium text-gray-400 mb-1">{t('promptControls.advanced.seed.label')}</label>
               <div className="flex items-center gap-2">
                  <div className="flex items-center rounded-md bg-gray-900/80 border border-gray-600">
-                    <button onClick={() => setSeedMode('random')} className={`px-2 py-1.5 text-xs rounded-l-md ${seedMode === 'random' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Random</button>
-                    <button onClick={() => setSeedMode('manual')} className={`px-2 py-1.5 text-xs rounded-r-md ${seedMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>Manual</button>
+                    <button onClick={() => setSeedMode('random')} className={`px-2 py-1.5 text-xs rounded-l-md ${seedMode === 'random' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>{t('promptControls.advanced.seed.random')}</button>
+                    <button onClick={() => setSeedMode('manual')} className={`px-2 py-1.5 text-xs rounded-r-md ${seedMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-gray-700/50'}`}>{t('promptControls.advanced.seed.manual')}</button>
                  </div>
                 <input 
                   type="text" 
@@ -886,37 +894,37 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
                   value={seed} 
                   onChange={(e) => setSeed(e.target.value.replace(/\D/g, ''))} 
                   disabled={seedMode === 'random'} 
-                  placeholder={seedMode === 'random' ? 'Randomly generated' : 'Enter a number'}
+                  placeholder={seedMode === 'random' ? t('promptControls.advanced.seed.placeholder.random') : t('promptControls.advanced.seed.placeholder.manual')}
                   className="w-full bg-gray-900/80 border border-gray-600 rounded-md p-2 text-sm text-gray-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-800/70 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
             <div className="space-y-3 pt-2">
               <Toggle 
-                label="Translate prompt to English" 
+                label={t('promptControls.advanced.toggles.translate.label')} 
                 id="translate-toggle" 
                 checked={isTranslateEnabled} 
                 onChange={setIsTranslateEnabled}
-                tooltip={!isGeminiKeyValid ? "Uses a public translation service when Gemini API key is not set." : "Uses Gemini API for translation."}
+                tooltip={!isGeminiKeyValid ? t('promptControls.advanced.toggles.translate.tooltip.noKey') : t('promptControls.advanced.toggles.translate.tooltip.withKey')}
               />
               <Toggle 
-                label="Auto-enhance prompt" 
+                label={t('promptControls.advanced.toggles.enhance.label')} 
                 id="enhance-prompt-toggle" 
                 checked={isEnhanceEnabled} 
                 onChange={setIsEnhanceEnabled}
                 disabled={isImageModelSelected && uploadedImages.length > 0}
                 tooltip={
                   (isImageModelSelected && uploadedImages.length > 0)
-                    ? "Enhancement is disabled when a source image is provided for an image model."
-                    : "Enhances prompt for better results. Uses Gemini API if a key is provided, otherwise uses Pollinations' built-in enhancer."
+                    ? t('promptControls.advanced.toggles.enhance.tooltip.disabled')
+                    : t('promptControls.advanced.toggles.enhance.tooltip.enabled')
                 }
               />
-              <Toggle label="Safe Mode" id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
-              <Toggle label="No Logo" id="nologo-toggle" checked={nologo} onChange={setNologo} />
-              <Toggle label="Exclude from Feed" id="nofeed-toggle" checked={nofeed} onChange={setNofeed} />
-              <Toggle label="Private Image" id="private-toggle" checked={isPrivate} onChange={setIsPrivate} />
+              <Toggle label={t('promptControls.advanced.toggles.safeMode')} id="safe-mode-toggle" checked={isSafeMode} onChange={setIsSafeMode} />
+              <Toggle label={t('promptControls.advanced.toggles.noLogo')} id="nologo-toggle" checked={nologo} onChange={setNologo} />
+              <Toggle label={t('promptControls.advanced.toggles.noFeed')} id="nofeed-toggle" checked={nofeed} onChange={setNofeed} />
+              <Toggle label={t('promptControls.advanced.toggles.private')} id="private-toggle" checked={isPrivate} onChange={setIsPrivate} />
               {showHighQuality && (
-                <Toggle label="High Quality" id="high-quality-toggle" checked={isHighQuality} onChange={setIsHighQuality} />
+                <Toggle label={t('promptControls.advanced.toggles.highQuality')} id="high-quality-toggle" checked={isHighQuality} onChange={setIsHighQuality} />
               )}
             </div>
           </div>
@@ -932,12 +940,12 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           {isLoading ? (
             <>
               <LoadingSpinner className="w-5 h-5" />
-              <span>Generating...</span>
+              <span>{t('promptControls.generateButton.generating')}</span>
             </>
           ) : (
              <>
               <GenerateIcon className="w-5 h-5" />
-              <span>Generate Image</span>
+              <span>{t('promptControls.generateButton.generate')}</span>
             </>
           )}
         </button>
@@ -948,7 +956,7 @@ export const PromptControls: React.FC<PromptControlsProps> = ({
           className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-400 hover:text-indigo-300 transition-colors"
         >
           <CoffeeIcon className="w-4 h-4" />
-          <span>Buy me a coffee</span>
+          <span>{t('promptControls.buyMeACoffee')}</span>
         </a>
       </div>
     </div>
